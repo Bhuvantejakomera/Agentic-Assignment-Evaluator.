@@ -944,6 +944,33 @@ function toggleCredentialsForm() {
   form.classList.toggle("hidden");
 }
 
+async function saveDirectClientSecrets() {
+  const cid = document.getElementById("input-client-id").value.trim();
+  const csecret = document.getElementById("input-client-secret").value.trim();
+  if (!cid || !csecret) {
+    showToast("Please enter both Client ID and Client Secret.", "error");
+    return;
+  }
+  showLoading(true, "Saving credentials...");
+  try {
+    const payload = {
+      client_id: cid,
+      client_secret: csecret,
+      redirect_uris: [
+        "http://localhost:8000/api/auth/google/callback",
+        "http://127.0.0.1:8000/api/auth/google/callback"
+      ]
+    };
+    await API.saveCredentialsJson(payload);
+    showToast("OAuth credentials saved! Redirecting to Google Login...", "success");
+    window.location.href = "/api/auth/google/login";
+  } catch (err) {
+    showToast("Failed to save credentials: " + err.message, "error");
+  } finally {
+    showLoading(false);
+  }
+}
+
 async function uploadCredentialsJson() {
   const fileInput = document.getElementById("input-credentials-file");
   if (!fileInput.files || fileInput.files.length === 0) {
