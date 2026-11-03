@@ -48,13 +48,24 @@ A local-first, AI-assisted assignment evaluation and grade management platform o
    - Authenticate faculty context (`Prof. Bhuvan Teja`, `chandragajjela2003@gmail.com`).
    - Integrates with Google Classroom OAuth 2.0 and local simulation mode.
 
-2. **Multi-Classroom Management & Discovery**:
-   - Access multiple independent classrooms from one screen:
-     - **Classroom A**: *Programming in C* (Section: CSE-A, 66 students)
-     - **Classroom B**: *Data Structures* (Section: CSE-B, 60 students)
-     - **Classroom C**: *Python Programming* (Section: AIML-A, 55 students)
-     - **Classroom D**: *Artificial Intelligence* (Section: AIML-B, 50 students)
-   - Strict course isolation: zero data leakage, separate student rosters, assignment lists, and rubrics.
+## 2. Dedicated Consolidated Marks Workbook Per Classroom & Shared Faculty Dashboard
+
+To ensure institutional scalability without mixing students, assignments, or marks between courses:
+1. **Isolated Classroom Workbooks (`workbooks/`)**:
+   - Each classroom is allocated its own distinct consolidated marks workbook:
+     - `workbooks/programming_in_c_cse_a_marks_record.xlsx` (66 students)
+     - `workbooks/data_structures_cse_b_marks_record.xlsx` (60 students)
+     - `workbooks/python_programming_aiml_a_marks_record.xlsx` (55 students)
+     - `workbooks/artificial_intelligence_aiml_b_marks_record.xlsx` (50 students)
+   - **Sheet 1 ("Consolidated Marks")**: Contains student roster strictly enrolled in that course, with dynamic assignment columns (`Lab-1`, `Lab-2`, `Assignment-1`...) and cumulative Remarks (`Late`, `Uploaded the wrong PDF`, `Incomplete`).
+   - **Assignment-Wise Detailed Sheets**: Whenever an assignment is evaluated, a dedicated tab (e.g. `Lab-1 Details`, `Assignment-2 Details`) is automatically created/updated inside that classroom's workbook with complete criterion-level breakdowns, raw marks, penalties, final scores, and evidence quotes.
+   - **Zero Cross-Course Contamination**: No student from Course A ever enters Course B's workbook, eliminating accidental data mixing.
+
+2. **Shared Faculty Dashboard**:
+   - Central control hub for faculty managing multiple courses.
+   - Global institutional counters: *Total Active Classrooms*, *Total Enrolled Students*, *Total Coursework Tasks*, *Total Evaluated*, *Faculty Approved*.
+   - Direct download links for each classroom's consolidated workbook directly from the dashboard card.
+   - Fast one-click classroom workspace switching via header navigation.
 
 3. **Rubric Preparation (Hybrid AI + Faculty Control)**:
    - AI reads assignment instructions and breaks them into explicit measurable criteria:
