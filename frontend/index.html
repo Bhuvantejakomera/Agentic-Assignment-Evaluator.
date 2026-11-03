@@ -638,13 +638,17 @@
             </button>
           </div>
 
-          <div class="p-3 bg-blue-50/50 rounded-lg border border-blue-200/60 text-2xs text-slate-600 space-y-1">
-            <div class="font-bold text-blue-900">How to get your credentials.json:</div>
-            <div>1. Open <a href="https://console.cloud.google.com" target="_blank" class="text-blue-600 underline">Google Cloud Console</a> & create a project.</div>
-            <div>2. Enable <strong>Google Classroom API</strong> and <strong>Google Drive API</strong>.</div>
-            <div>3. Go to <strong>Credentials &rarr; Create Credentials &rarr; OAuth 2.0 Client ID</strong> (Web application).</div>
-            <div>4. Add Authorized Redirect URI: <code class="bg-white px-1 py-0.5 rounded border border-blue-200 font-mono">http://localhost:8000/api/auth/google/callback</code></div>
-            <div>5. Download JSON and upload it above.</div>
+          <div class="p-3 bg-blue-50/50 rounded-lg border border-blue-200/60 text-2xs text-slate-600 space-y-1.5">
+            <div class="font-bold text-blue-900">How to configure credentials.json:</div>
+            <div>1. Go to <a href="https://console.cloud.google.com" target="_blank" class="text-blue-600 underline font-semibold">Google Cloud Console</a> & create or select a project.</div>
+            <div>2. In <strong>APIs & Services &rarr; Library</strong>, enable <strong>Google Classroom API</strong> and <strong>Google Drive API</strong>.</div>
+            <div>3. In <strong>OAuth consent screen</strong>: Set User Type to External/Internal, and under <strong>Test Users</strong>, add your email: <code class="bg-white px-1 py-0.5 rounded border border-blue-200 font-mono text-slate-700">chandragajjela2003@gmail.com</code>.</div>
+            <div>4. In <strong>Credentials &rarr; Create Credentials &rarr; OAuth 2.0 Client ID</strong>, select Application type: <strong>Web application</strong>.</div>
+            <div>5. Under <strong>Authorized redirect URIs</strong>, add:
+              <div class="font-mono bg-white px-2 py-1 rounded border border-blue-200 text-blue-800 mt-1 select-all">http://localhost:8000/api/auth/google/callback</div>
+              <div class="font-mono bg-white px-2 py-1 rounded border border-blue-200 text-blue-800 mt-1 select-all">http://127.0.0.1:8000/api/auth/google/callback</div>
+            </div>
+            <div>6. Click <strong>Create</strong>, download the JSON file, and upload it above.</div>
           </div>
         </div>
       </div>

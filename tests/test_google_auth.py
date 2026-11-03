@@ -9,9 +9,24 @@ from backend.app.services.classroom_service import ClassroomService
 
 client = TestClient(app)
 
+ORIGINAL_CREDS_BACKUP = None
+
 def setup_module():
+    global ORIGINAL_CREDS_BACKUP
     init_db()
     ClassroomService.seed_initial_classrooms_if_empty()
+    creds_path = GoogleOAuthService.get_credentials_path()
+    if creds_path.exists():
+        ORIGINAL_CREDS_BACKUP = creds_path.read_text(encoding="utf-8")
+    else:
+        ORIGINAL_CREDS_BACKUP = None
+
+def teardown_module():
+    creds_path = GoogleOAuthService.get_credentials_path()
+    if ORIGINAL_CREDS_BACKUP is not None:
+        creds_path.write_text(ORIGINAL_CREDS_BACKUP, encoding="utf-8")
+    elif creds_path.exists():
+        creds_path.unlink()
 
 def test_faculty_profile_endpoint():
     res = client.get("/api/auth/faculty")
@@ -67,3 +82,4 @@ def test_disconnect_google():
     # Check faculty profile
     fac = client.get("/api/auth/faculty").json()
     assert fac["is_connected_google"] is False
+

@@ -32,38 +32,72 @@ class GoogleOAuthService:
         try:
             with open(CREDENTIALS_FILE, "r") as f:
                 data = json.load(f)
-                return "web" in data or "installed" in data
+                cfg = data.get("web") or data.get("installed", {})
+                cid = cfg.get("client_id", "").strip()
+                csecret = cfg.get("client_secret", "").strip()
+                if not cid or not csecret:
+                    return False
+                if "YOUR_GOOGLE_CLIENT_ID" in cid or "YOUR_GOOGLE_CLIENT_SECRET" in csecret:
+                    return False
+                return True
         except Exception:
             return False
+
+    @classmethod
+    def get_effective_redirect_uri(cls, requested_redirect_uri: str) -> str:
+        """Ensures the redirect URI precisely matches what is registered in credentials.json."""
+        if CREDENTIALS_FILE.exists():
+            try:
+                with open(CREDENTIALS_FILE, "r") as f:
+                    data = json.load(f)
+                    cfg = data.get("web") or data.get("installed", {})
+                    registered = cfg.get("redirect_uris", [])
+                    if registered:
+                        for reg in registered:
+                            if reg.strip() == requested_redirect_uri.strip():
+                                return reg.strip()
+                        return registered[0].strip()
+            except Exception:
+                pass
+        return requested_redirect_uri
 
     @classmethod
     def get_client_info(cls) -> Dict[str, Any]:
         configured = cls.is_credentials_file_configured()
         client_id = None
         project_id = None
-        if configured:
+        redirect_uris = []
+        if CREDENTIALS_FILE.exists():
             try:
                 with open(CREDENTIALS_FILE, "r") as f:
                     raw = json.load(f)
                     cfg = raw.get("web") or raw.get("installed", {})
                     client_id = cfg.get("client_id")
                     project_id = cfg.get("project_id")
+                    redirect_uris = cfg.get("redirect_uris", [])
             except Exception:
                 pass
         return {
             "configured": configured,
             "credentials_file": str(CREDENTIALS_FILE),
             "client_id": client_id,
-            "project_id": project_id
+            "project_id": project_id,
+            "redirect_uris": redirect_uris
         }
 
     @classmethod
     def save_client_secrets(cls, secrets_dict: Dict[str, Any]) -> bool:
         """Saves Google OAuth client secrets JSON to disk."""
-        # Ensure proper structure
         if "web" not in secrets_dict and "installed" not in secrets_dict:
-            # Wrap as web client
             secrets_dict = {"web": secrets_dict}
+
+        # Auto-ensure default redirect_uris if empty
+        cfg = secrets_dict.get("web") or secrets_dict.get("installed", {})
+        if "redirect_uris" not in cfg or not cfg["redirect_uris"]:
+            cfg["redirect_uris"] = [
+                "http://localhost:8000/api/auth/google/callback",
+                "http://127.0.0.1:8000/api/auth/google/callback"
+            ]
 
         with open(CREDENTIALS_FILE, "w", encoding="utf-8") as f:
             json.dump(secrets_dict, f, indent=2)
@@ -74,17 +108,19 @@ class GoogleOAuthService:
         """Generates Google OAuth 2.0 consent URL."""
         if not cls.is_credentials_file_configured():
             raise ValueError(
-                f"Google OAuth client secrets file not found at {CREDENTIALS_FILE}. "
-                "Please upload or configure your credentials.json first."
+                "Real Google OAuth client credentials are not configured yet. "
+                "Please upload or configure your real credentials.json from Google Cloud Console."
             )
 
         # Allow HTTP for local development
         os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
+        effective_uri = cls.get_effective_redirect_uri(redirect_uri)
+
         flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
             str(CREDENTIALS_FILE),
             scopes=GOOGLE_SCOPES,
-            redirect_uri=redirect_uri
+            redirect_uri=effective_uri
         )
 
         auth_url, _ = flow.authorization_url(
@@ -103,10 +139,12 @@ class GoogleOAuthService:
         """Exchanges code for tokens and fetches user profile."""
         os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
+        effective_uri = cls.get_effective_redirect_uri(redirect_uri)
+
         flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
             str(CREDENTIALS_FILE),
             scopes=GOOGLE_SCOPES,
-            redirect_uri=redirect_uri
+            redirect_uri=effective_uri
         )
         flow.fetch_token(code=code)
         creds = flow.credentials
@@ -325,3 +363,4 @@ class GoogleOAuthService:
             "students_synced": total_students_synced,
             "message": f"Successfully synchronized {total_courses_synced} courses from Google Classroom."
         }
+

@@ -867,12 +867,16 @@ async function openGoogleAuthModal() {
       credForm.classList.add("hidden");
     } else {
       statusEl.className = "font-bold text-amber-600";
-      statusEl.textContent = "Not connected";
-      connectedActions.classList.add("hidden");
-      loginAction.classList.remove("hidden");
-      if (!clientInfo.configured) {
+      if (clientInfo.configured) {
+        statusEl.textContent = "Ready to Connect";
+        loginAction.classList.remove("hidden");
+        credForm.classList.add("hidden");
+      } else {
+        statusEl.textContent = "Configuration Required (Upload credentials.json)";
+        loginAction.classList.add("hidden");
         credForm.classList.remove("hidden");
       }
+      connectedActions.classList.add("hidden");
     }
 
     document.getElementById("google-auth-modal").classList.remove("hidden");
