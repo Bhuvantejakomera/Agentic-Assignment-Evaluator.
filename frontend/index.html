@@ -704,11 +704,15 @@
             <div>2. In <strong>APIs & Services &rarr; Library</strong>, enable <strong>Google Classroom API</strong> and <strong>Google Drive API</strong>.</div>
             <div>3. In <strong>OAuth consent screen</strong>: Set User Type to External/Internal, and under <strong>Test Users</strong>, add your email: <code class="bg-white px-1 py-0.5 rounded border border-blue-200 font-mono text-slate-700">chandragajjela2003@gmail.com</code>.</div>
             <div>4. In <strong>Credentials &rarr; Create Credentials &rarr; OAuth 2.0 Client ID</strong>, select Application type: <strong>Web application</strong>.</div>
-            <div>5. Under <strong>Authorized redirect URIs</strong>, add:
+            <div>5. Under <strong>Authorized JavaScript origins</strong> (optional), enter:
+              <div class="font-mono bg-white px-2 py-1 rounded border border-blue-200 text-blue-800 mt-1 select-all">http://localhost:8000</div>
+              <span class="text-3xs text-slate-500 italic">(Do NOT add a path or trailing slash here)</span>
+            </div>
+            <div>6. Under <strong>Authorized redirect URIs</strong>, enter:
               <div class="font-mono bg-white px-2 py-1 rounded border border-blue-200 text-blue-800 mt-1 select-all">http://localhost:8000/api/auth/google/callback</div>
               <div class="font-mono bg-white px-2 py-1 rounded border border-blue-200 text-blue-800 mt-1 select-all">http://127.0.0.1:8000/api/auth/google/callback</div>
             </div>
-            <div>6. Click <strong>Create</strong>, download the JSON file, and upload it above.</div>
+            <div>7. Click <strong>Create</strong>, copy the Client ID & Secret (or download JSON), and paste/upload above.</div>
           </div>
         </div>
       </div>
