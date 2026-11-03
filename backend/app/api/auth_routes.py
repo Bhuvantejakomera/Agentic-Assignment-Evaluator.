@@ -144,7 +144,12 @@ def google_login(request: Request):
     return RedirectResponse(auth_url)
 
 @router.get("/google/callback")
-def google_callback(request: Request, code: Optional[str] = None, error: Optional[str] = None):
+def google_callback(
+    request: Request,
+    code: Optional[str] = None,
+    state: Optional[str] = None,
+    error: Optional[str] = None
+):
     """Handles Google OAuth callback, saves tokens, and syncs live classrooms."""
     if error:
         raise HTTPException(status_code=400, detail=f"Google authentication error: {error}")
@@ -156,7 +161,7 @@ def google_callback(request: Request, code: Optional[str] = None, error: Optiona
     redirect_uri = f"{proto}://{host}/api/auth/google/callback"
 
     try:
-        token_data, user_info = GoogleOAuthService.exchange_code_for_tokens(code, redirect_uri)
+        token_data, user_info = GoogleOAuthService.exchange_code_for_tokens(code, redirect_uri, state=state)
         GoogleOAuthService.save_tokens_for_faculty(ClassroomService.DEFAULT_FACULTY_ID, user_info, token_data)
 
         # Trigger live Classroom sync

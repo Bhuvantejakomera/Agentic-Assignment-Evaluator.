@@ -17,6 +17,7 @@ from backend.app.services.audit_service import AuditService
 from backend.app.services.excel_service import ExcelService
 
 CREDENTIALS_FILE = Path(GOOGLE_CLIENT_SECRETS_FILE)
+_OAUTH_STATE_VERIFIERS: Dict[str, str] = {}
 
 class GoogleOAuthService:
     """Manages real Google OAuth 2.0 flow and live Google Classroom API synchronization."""
@@ -122,19 +123,24 @@ class GoogleOAuthService:
             scopes=GOOGLE_SCOPES,
             redirect_uri=effective_uri
         )
+        flow.autogenerate_code_verifier = False
 
-        auth_url, _ = flow.authorization_url(
+        auth_url, state = flow.authorization_url(
             access_type="offline",
             include_granted_scopes="true",
             prompt="consent"
         )
+        if getattr(flow, "code_verifier", None):
+            _OAUTH_STATE_VERIFIERS[state] = flow.code_verifier
+
         return auth_url
 
     @classmethod
     def exchange_code_for_tokens(
         cls,
         code: str,
-        redirect_uri: str
+        redirect_uri: str,
+        state: Optional[str] = None
     ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """Exchanges code for tokens and fetches user profile."""
         os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
@@ -146,6 +152,11 @@ class GoogleOAuthService:
             scopes=GOOGLE_SCOPES,
             redirect_uri=effective_uri
         )
+        flow.autogenerate_code_verifier = False
+
+        if state and state in _OAUTH_STATE_VERIFIERS:
+            flow.code_verifier = _OAUTH_STATE_VERIFIERS.pop(state)
+
         flow.fetch_token(code=code)
         creds = flow.credentials
 
