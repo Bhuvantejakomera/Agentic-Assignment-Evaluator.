@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any, Tuple
 import google_auth_oauthlib.flow
 from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
 import google.oauth2.credentials
 from backend.app.config import (
     BASE_DIR,
@@ -274,6 +275,16 @@ class GoogleOAuthService:
         total_students_synced = 0
 
         with db_session() as conn:
+            # Clean out mock/demo courses so real account never mixes with mock database
+            conn.execute("DELETE FROM courses WHERE id IN ('course-c-101', 'course-ds-201', 'course-py-301', 'course-ai-401')")
+
+            real_course_ids = [c["id"] for c in courses_list]
+            if real_course_ids:
+                placeholders = ",".join("?" for _ in real_course_ids)
+                conn.execute(f"DELETE FROM courses WHERE id NOT IN ({placeholders})", real_course_ids)
+            else:
+                conn.execute("DELETE FROM courses")
+
             for c in courses_list:
                 course_id = c["id"]
                 course_name = c.get("name", "Unnamed Course")
@@ -300,41 +311,10 @@ class GoogleOAuthService:
                     (course_id, faculty_id, course_name, section, description, room, status, str(wb_path), now_str, now_str)
                 )
 
-                # 2. Fetch Coursework / Assignments
-                try:
-                    cw_res = service.courses().courseWork().list(courseId=course_id).execute()
-                    coursework_items = cw_res.get("courseWork", [])
-                    total_assignments_synced += len(coursework_items)
-
-                    for cw in coursework_items:
-                        cw_id = cw["id"]
-                        title = cw.get("title", "Untitled Assignment")
-                        desc = cw.get("description", "")
-                        max_p = float(cw.get("maxPoints", 100.0))
-                        due_obj = cw.get("dueDate", {})
-                        due_date_str = None
-                        if due_obj:
-                            due_date_str = f"{due_obj.get('year')}-{due_obj.get('month'):02d}-{due_obj.get('day'):02d}"
-
-                        conn.execute(
-                            """
-                            INSERT INTO assignments (id, course_id, title, description, max_points, due_date, status, created_at)
-                            VALUES (?, ?, ?, ?, ?, ?, 'DRAFT', ?)
-                            ON CONFLICT(id) DO UPDATE SET
-                                title = excluded.title,
-                                description = excluded.description,
-                                max_points = excluded.max_points,
-                                due_date = excluded.due_date
-                            """,
-                            (cw_id, course_id, title, desc, max_p, due_date_str, now_str)
-                        )
-                except Exception:
-                    pass
-
-                # 3. Fetch Students Roster
+                # 2. Fetch Students Roster First
                 course_students = []
                 try:
-                    students_res = service.courses().students().list(courseId=course_id).execute()
+                    students_res = service.courses().students().list(courseId=course_id, pageSize=100).execute()
                     student_items = students_res.get("students", [])
                     total_students_synced += len(student_items)
 
@@ -363,6 +343,112 @@ class GoogleOAuthService:
                 except Exception:
                     pass
 
+                # 3. Fetch Coursework / Assignments & Student Submissions
+                try:
+                    cw_res = service.courses().courseWork().list(courseId=course_id).execute()
+                    coursework_items = cw_res.get("courseWork", [])
+                    total_assignments_synced += len(coursework_items)
+
+                    for cw in coursework_items:
+                        cw_id = cw["id"]
+                        title = cw.get("title", "Untitled Assignment")
+                        desc = cw.get("description", "")
+                        max_p = float(cw.get("maxPoints", 100.0))
+                        due_obj = cw.get("dueDate", {})
+                        due_date_str = None
+                        if due_obj:
+                            due_date_str = f"{due_obj.get('year')}-{due_obj.get('month'):02d}-{due_obj.get('day'):02d}"
+
+                        conn.execute(
+                            """
+                            INSERT INTO assignments (id, course_id, title, description, max_points, due_date, status, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?, 'DRAFT', ?)
+                            ON CONFLICT(id) DO UPDATE SET
+                                title = excluded.title,
+                                description = excluded.description,
+                                max_points = excluded.max_points,
+                                due_date = excluded.due_date
+                            """,
+                            (cw_id, course_id, title, desc, max_p, due_date_str, now_str)
+                        )
+
+                        # Fetch real student submissions for this coursework
+                        try:
+                            sub_res = service.courses().courseWork().studentSubmissions().list(
+                                courseId=course_id,
+                                courseWorkId=cw_id
+                            ).execute()
+                            student_submissions = sub_res.get("studentSubmissions", [])
+                            for sub in student_submissions:
+                                sub_id = sub["id"]
+                                stud_id = sub.get("userId")
+                                sub_state = sub.get("state", "TURNED_IN")
+                                is_late = 1 if sub.get("late") else 0
+                                sub_time = sub.get("updateTime") or sub.get("creationTime") or now_str
+
+                                assign_sub = sub.get("assignmentSubmission", {})
+                                raw_attachments = assign_sub.get("attachments", [])
+                                attachments_info = []
+                                for att in raw_attachments:
+                                    if "driveFile" in att:
+                                        df = att["driveFile"]
+                                        attachments_info.append({
+                                            "filename": df.get("title", "Submission File"),
+                                            "file_id": df.get("id"),
+                                            "file_type": Path(df.get("title", "file.pdf")).suffix.lstrip(".").upper() or "PDF",
+                                            "link": df.get("alternateLink", "")
+                                        })
+                                    elif "link" in att:
+                                        lk = att["link"]
+                                        attachments_info.append({
+                                            "filename": lk.get("title") or lk.get("url"),
+                                            "file_type": "LINK",
+                                            "link": lk.get("url")
+                                        })
+
+                                flags = []
+                                if is_late:
+                                    flags.append("LATE")
+                                if sub_state in ("NEW", "CREATED"):
+                                    flags.append("MISSING")
+
+                                # Ensure student exists in students table
+                                conn.execute(
+                                    "INSERT OR IGNORE INTO students (id, name, email) VALUES (?, ?, ?)",
+                                    (stud_id, f"Student {stud_id[:6]}", "")
+                                )
+                                conn.execute(
+                                    "INSERT OR IGNORE INTO course_enrollments (course_id, student_id, enrolled_at) VALUES (?, ?, ?)",
+                                    (course_id, stud_id, now_str)
+                                )
+
+                                conn.execute(
+                                    """
+                                    INSERT INTO submissions (id, course_id, assignment_id, student_id, submission_time, is_late, state, attachments_json, submission_flags_json, created_at)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    ON CONFLICT(course_id, assignment_id, student_id) DO UPDATE SET
+                                        id = excluded.id,
+                                        submission_time = excluded.submission_time,
+                                        is_late = excluded.is_late,
+                                        state = excluded.state,
+                                        attachments_json = excluded.attachments_json,
+                                        submission_flags_json = excluded.submission_flags_json
+                                    """,
+                                    (
+                                        sub_id, course_id, cw_id, stud_id, sub_time, is_late, sub_state,
+                                        json.dumps(attachments_info), json.dumps(flags), now_str
+                                    )
+                                )
+                        except Exception as sub_err:
+                            pass
+                except Exception:
+                    pass
+
+                conn.execute(
+                    "UPDATE courses SET assignments_count = (SELECT COUNT(*) FROM assignments WHERE course_id = ?) WHERE id = ?",
+                    (course_id, course_id)
+                )
+
                 # Ensure dedicated consolidated workbook exists with these students
                 assignment_titles = [cw.get("title", "Assignment") for cw in coursework_items] if 'coursework_items' in locals() else ["Assignment 1"]
                 ExcelService.ensure_classroom_workbook(
@@ -390,4 +476,24 @@ class GoogleOAuthService:
             "students_synced": total_students_synced,
             "message": f"Successfully synchronized {total_courses_synced} courses from Google Classroom."
         }
+
+    @classmethod
+    def download_drive_file(cls, file_id: str, dest_path: Path, faculty_id: str = "fac-1001") -> bool:
+        """Downloads a Google Drive file to local disk for local parsing and evaluation."""
+        try:
+            creds = cls.get_credentials(faculty_id)
+            if not creds:
+                return False
+            service = build("drive", "v3", credentials=creds)
+            req = service.files().get_media(fileId=file_id)
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(dest_path, "wb") as f:
+                downloader = MediaIoBaseDownload(f, req)
+                done = False
+                while not done:
+                    status, done = downloader.next_chunk()
+            return True
+        except Exception as e:
+            print(f"Error downloading drive file {file_id}: {e}")
+            return False
 

@@ -4,7 +4,9 @@ from typing import Optional, List, Dict, Any
 class SubmissionAttachment(BaseModel):
     filename: str
     file_type: str  # PDF, DOCX, HTML, C, CPP, PY, UNKNOWN
-    file_path: str
+    file_path: Optional[str] = None
+    file_id: Optional[str] = None
+    link: Optional[str] = None
     file_size_bytes: int = 0
     is_readable: bool = True
     error_message: Optional[str] = None

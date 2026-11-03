@@ -1,8 +1,10 @@
 import json
 import uuid
 from datetime import datetime
+from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query
 from typing import List, Optional, Dict, Any
+from backend.app.config import SUBMISSIONS_DIR
 from backend.app.database import db_session
 from backend.app.models.rubric import RubricResponse, CriterionModel
 from backend.app.models.submission import SubmissionAttachment, ExtractedContentModel
@@ -13,6 +15,8 @@ from backend.app.models.evaluation import (
     EvaluationAdjustRequest,
     BatchApproveRequest
 )
+from backend.app.services.document_extractor import DocumentExtractor
+from backend.app.services.google_oauth_service import GoogleOAuthService
 from backend.app.services.evaluation_engine import EvaluationEngine
 from backend.app.services.audit_service import AuditService
 
@@ -114,6 +118,33 @@ def start_evaluation(course_id: str, assignment_id: str):
                     extracted = ExtractedContentModel(**ext_data)
                 except Exception:
                     pass
+
+            # If text not extracted yet, download from Google Drive / extract from files
+            if not extracted.text_content and attachments:
+                for att in attachments:
+                    file_path = None
+                    if att.file_path and Path(att.file_path).exists():
+                        file_path = Path(att.file_path)
+                    elif att.file_id:
+                        dest = SUBMISSIONS_DIR / course_id / assignment_id / sid / (att.filename or f"{att.file_id}.pdf")
+                        if not dest.exists():
+                            GoogleOAuthService.download_drive_file(att.file_id, dest)
+                        if dest.exists():
+                            file_path = dest
+
+                    if file_path and file_path.exists():
+                        ftype = DocumentExtractor.identify_file_type(file_path)
+                        if ftype == "DOCX":
+                            txt, _ = DocumentExtractor.extract_from_docx(file_path)
+                            extracted.text_content = (extracted.text_content + "\n" + txt).strip()
+                        elif ftype == "PDF":
+                            txt, _ = DocumentExtractor.extract_from_pdf(file_path)
+                            extracted.text_content = (extracted.text_content + "\n" + txt).strip()
+                        elif ftype in ("C", "CPP", "PY"):
+                            txt, code, _ = DocumentExtractor.extract_from_source_code(file_path)
+                            extracted.text_content = (extracted.text_content + "\n" + txt).strip()
+                            if code:
+                                extracted.code_snippets.append({"language": ftype.lower(), "code": code})
 
             eval_res = EvaluationEngine.evaluate_submission(
                 run_id=run_id,

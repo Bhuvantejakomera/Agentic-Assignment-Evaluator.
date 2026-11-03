@@ -32,6 +32,11 @@ class ClassroomService:
     def seed_initial_classrooms_if_empty(cls) -> None:
         """Seeds initial data for multiple classrooms, students from Lab_Marks_Record.xlsx, and assignments."""
         with db_session() as conn:
+            # Check if real Google account is connected - NEVER seed mock data for a real account!
+            fac = conn.execute("SELECT id, google_access_token FROM faculty WHERE id = ?", (cls.DEFAULT_FACULTY_ID,)).fetchone()
+            if fac and fac["google_access_token"] and fac["google_access_token"] != "direct_faculty_session_token":
+                return
+
             # Check if faculty exists
             fac = conn.execute("SELECT id FROM faculty WHERE id = ?", (cls.DEFAULT_FACULTY_ID,)).fetchone()
             if not fac:
