@@ -217,3 +217,4 @@ def init_db() -> None:
             FOREIGN KEY (assignment_id) REFERENCES assignments(id) ON DELETE CASCADE
         );
         """)
+

@@ -23,14 +23,19 @@ def get_workbook_columns(course_id: str, assignment_id: str):
     if not assign:
         raise HTTPException(status_code=404, detail="Assignment not found.")
 
-    wb_path = Path(course.excel_workbook_path) if course.excel_workbook_path else DEFAULT_EXCEL_TEMPLATE
+    wb_path = Path(course.excel_workbook_path) if course.excel_workbook_path else ExcelService.get_classroom_workbook_path(course.id, course.name, course.section)
+    if not wb_path.exists():
+        # Ensure workbook exists
+        wb_path = ExcelService.get_classroom_workbook_path(course.id, course.name, course.section)
+
     columns = ExcelService.inspect_workbook_columns(wb_path)
     suggested_col = ExcelService.map_assignment_to_column(assign.title, columns)
 
     return {
         "workbook_path": str(wb_path),
+        "workbook_name": wb_path.name,
         "columns": columns,
-        "suggested_column": suggested_col or assign.title,
+        "suggested_column": suggested_col or ExcelService.get_short_column_header(assign.title),
         "is_column_existing": suggested_col is not None
     }
 
@@ -57,7 +62,7 @@ def export_excel(
     if not evaluations:
         raise HTTPException(status_code=400, detail="No evaluation results found to export. Please run evaluation first.")
 
-    wb_path = Path(course.excel_workbook_path) if course.excel_workbook_path else DEFAULT_EXCEL_TEMPLATE
+    wb_path = Path(course.excel_workbook_path) if course.excel_workbook_path else ExcelService.get_classroom_workbook_path(course.id, course.name, course.section)
 
     # Determine target column
     if not target_column_name:
@@ -89,11 +94,12 @@ def export_excel(
 
     return {
         "status": "success",
+        "classroom_workbook_path": str(wb_path),
         "target_column": target_column_name,
         "versioned_master_workbook": str(versioned_wb),
         "detail_report_path": str(detail_wb),
         "total_records_updated": len(evaluations),
-        "message": f"Successfully updated column '{target_column_name}' in classroom workbook."
+        "message": f"Successfully updated column '{target_column_name}' and added detailed evaluation sheet in classroom workbook."
     }
 
 @router.get("/download")
@@ -130,3 +136,4 @@ def download_excel(course_id: str, assignment_id: str, file_type: str = Query("m
         filename=latest_file.name,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+

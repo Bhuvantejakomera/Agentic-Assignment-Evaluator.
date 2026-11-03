@@ -31,3 +31,4 @@ def get_assignment_detail(course_id: str, assignment_id: str):
         course_name=course.name,
         course_section=course.section
     )
+

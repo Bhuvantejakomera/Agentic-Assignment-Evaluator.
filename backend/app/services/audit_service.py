@@ -29,3 +29,4 @@ class AuditService:
                 (log_id, now_str, faculty_id, course_id, assignment_id, action, details_str)
             )
         return log_id
+

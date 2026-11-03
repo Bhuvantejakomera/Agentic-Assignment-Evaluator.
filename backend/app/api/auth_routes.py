@@ -49,3 +49,4 @@ def connect_google_classroom():
         )
     AuditService.log_event("GOOGLE_CLASSROOM_CONNECTED", faculty_id=ClassroomService.DEFAULT_FACULTY_ID)
     return {"status": "connected", "message": "Successfully authenticated with Google Classroom."}
+

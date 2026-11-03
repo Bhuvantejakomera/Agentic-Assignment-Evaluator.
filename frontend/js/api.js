@@ -17,6 +17,10 @@ const API = {
     const res = await fetch(`${API_BASE}/api/classrooms`);
     return res.json();
   },
+  async getDashboardStats() {
+    const res = await fetch(`${API_BASE}/api/classrooms/dashboard/stats`);
+    return res.json();
+  },
   async getClassroom(courseId) {
     const res = await fetch(`${API_BASE}/api/classrooms/${courseId}`);
     return res.json();
@@ -24,6 +28,13 @@ const API = {
   async syncClassroom(courseId) {
     const res = await fetch(`${API_BASE}/api/classrooms/${courseId}/sync`, { method: "POST" });
     return res.json();
+  },
+  async getClassroomWorkbookInfo(courseId) {
+    const res = await fetch(`${API_BASE}/api/classrooms/${courseId}/workbook/info`);
+    return res.json();
+  },
+  downloadClassroomWorkbookUrl(courseId) {
+    return `${API_BASE}/api/classrooms/${courseId}/workbook`;
   },
 
   // Assignments
@@ -136,3 +147,4 @@ const API = {
     return res.json();
   }
 };
+

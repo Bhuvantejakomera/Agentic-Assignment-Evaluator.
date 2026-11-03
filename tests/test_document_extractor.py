@@ -38,3 +38,4 @@ def test_process_multiple_attachments():
         assert all(a.is_readable for a in attachments_meta)
         assert "theoretical notes" in extracted.text_content
         assert len(extracted.code_snippets) >= 1
+

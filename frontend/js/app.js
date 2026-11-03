@@ -40,8 +40,21 @@ async function loadFaculty() {
 async function loadClassrooms() {
   try {
     showLoading(true);
-    const data = await API.getClassrooms();
+    const [data, stats] = await Promise.all([
+      API.getClassrooms(),
+      API.getDashboardStats().catch(() => null)
+    ]);
     appState.classrooms = data.courses || [];
+    appState.dashboardStats = stats;
+
+    if (stats) {
+      document.getElementById("global-stat-courses").textContent = stats.total_classrooms;
+      document.getElementById("global-stat-students").textContent = stats.total_students;
+      document.getElementById("global-stat-assignments").textContent = stats.total_assignments;
+      document.getElementById("global-stat-evaluated").textContent = stats.total_evaluated;
+      document.getElementById("global-stat-approved").textContent = stats.total_approved;
+    }
+
     renderClassroomsGrid();
     renderClassroomDropdown();
   } catch (err) {
@@ -127,37 +140,75 @@ function renderClassroomsGrid() {
   grid.innerHTML = "";
 
   if (appState.classrooms.length === 0) {
-    grid.innerHTML = `<div class="col-span-3 text-center py-12 text-slate-500">No classrooms found.</div>`;
+    grid.innerHTML = `<div class="col-span-2 text-center py-12 text-slate-500">No classrooms found.</div>`;
     return;
   }
 
   appState.classrooms.forEach(course => {
+    const courseSummary = appState.dashboardStats?.classrooms?.find(c => c.course_id === course.id);
+    const evalCount = courseSummary ? courseSummary.evaluated_count : 0;
+    const appCount = courseSummary ? courseSummary.approved_count : 0;
+    const wbFilename = course.excel_workbook_path ? course.excel_workbook_path.split('/').pop() : `${course.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}_marks_record.xlsx`;
+
     const card = document.createElement("div");
-    card.className = "bg-white rounded-xl shadow-sm border border-slate-200 hover:border-blue-400 hover:shadow-md transition-all duration-200 p-6 flex flex-col justify-between";
+    card.className = "bg-white rounded-xl shadow-xs border border-slate-200 hover:border-blue-400 hover:shadow-md transition-all duration-200 p-6 flex flex-col justify-between space-y-4";
     card.innerHTML = `
       <div>
         <div class="flex items-start justify-between mb-3">
-          <span class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-            ${course.section}
-          </span>
+          <div class="flex items-center gap-2">
+            <span class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+              ${course.section}
+            </span>
+            <span class="text-xs text-emerald-600 font-medium flex items-center">
+              <span class="w-2 h-2 rounded-full bg-emerald-500 mr-1.5"></span>${course.status}
+            </span>
+          </div>
           <span class="text-xs text-slate-400 font-mono">${course.id}</span>
         </div>
         <h3 class="text-lg font-bold text-slate-800 mb-1">${course.name}</h3>
-        <p class="text-sm text-slate-500 mb-4 line-clamp-2">${course.description || "No description provided."}</p>
+        <p class="text-xs text-slate-500 mb-4 line-clamp-2">${course.description || "No description provided."}</p>
         
-        <div class="grid grid-cols-2 gap-2 py-3 border-y border-slate-100 text-xs text-slate-600 mb-4">
-          <div><span class="font-semibold text-slate-700">${course.enrolled_count}</span> Enrolled Students</div>
-          <div><span class="font-semibold text-slate-700">${course.assignments_count}</span> Assignments</div>
-          <div class="col-span-2 text-slate-400">Room: ${course.room || "Main Campus"}</div>
+        <div class="grid grid-cols-2 gap-3 py-3 border-y border-slate-100 text-xs text-slate-600 mb-4">
+          <div class="flex items-center gap-2">
+            <span class="w-7 h-7 rounded-lg bg-slate-100 text-slate-700 font-bold flex items-center justify-center text-xs">${course.enrolled_count}</span>
+            <div>
+              <div class="font-semibold text-slate-800">Students</div>
+              <div class="text-2xs text-slate-400">Isolated Roster</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="w-7 h-7 rounded-lg bg-blue-50 text-blue-700 font-bold flex items-center justify-center text-xs">${course.assignments_count}</span>
+            <div>
+              <div class="font-semibold text-slate-800">Assignments</div>
+              <div class="text-2xs text-slate-400">Classroom Scoped</div>
+            </div>
+          </div>
+          <div class="col-span-2 flex items-center justify-between text-2xs pt-1 text-slate-500">
+            <span>Evaluated: <strong class="text-slate-700">${evalCount}</strong></span>
+            <span>Approved: <strong class="text-emerald-700">${appCount}</strong></span>
+            <span>Room: ${course.room || "Campus Hall"}</span>
+          </div>
+        </div>
+
+        <!-- Dedicated Classroom Workbook Section -->
+        <div class="p-3 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-between text-xs">
+          <div class="flex items-center gap-2 truncate">
+            <svg class="w-4 h-4 text-emerald-600 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 2v2h8V6H6zm0 4v2h8v-2H6zm0 4v2h5v-2H6z"/></svg>
+            <div class="truncate">
+              <span class="font-bold text-slate-800 block text-2xs uppercase tracking-wider">Dedicated Workbook:</span>
+              <span class="font-mono text-2xs text-slate-600 truncate block">${wbFilename}</span>
+            </div>
+          </div>
+          <a href="${API.downloadClassroomWorkbookUrl(course.id)}" target="_blank" onclick="event.stopPropagation();" class="px-2.5 py-1 bg-white hover:bg-slate-100 text-emerald-800 border border-emerald-300 rounded text-2xs font-bold transition shrink-0 flex items-center gap-1">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+            Download
+          </a>
         </div>
       </div>
 
-      <div class="flex items-center justify-between pt-2">
-        <span class="text-xs text-emerald-600 font-medium flex items-center">
-          <span class="w-2 h-2 rounded-full bg-emerald-500 mr-1.5"></span>${course.status}
-        </span>
-        <button onclick="selectClassroom('${course.id}')" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg shadow-sm transition flex items-center gap-1.5">
-          <span>Open Classroom</span>
+      <div class="flex items-center justify-end pt-2">
+        <button onclick="selectClassroom('${course.id}')" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-xs transition flex items-center gap-1.5">
+          <span>Open Classroom Workspace</span>
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
         </button>
       </div>
@@ -183,6 +234,20 @@ async function selectClassroom(courseId) {
     appState.selectedCourse = appState.classrooms.find(c => c.id === courseId) || await API.getClassroom(courseId);
     document.getElementById("header-course-select").value = courseId;
     
+    // Fetch dedicated workbook info
+    const wbInfo = await API.getClassroomWorkbookInfo(courseId).catch(() => null);
+    const wbLink = document.getElementById("btn-download-course-wb");
+    if (wbLink) wbLink.href = API.downloadClassroomWorkbookUrl(courseId);
+
+    const pathBadge = document.getElementById("classroom-wb-path-badge");
+    if (pathBadge && wbInfo) {
+      pathBadge.textContent = wbInfo.path || "Pending Export Initialization";
+    }
+    const sheetsBadge = document.getElementById("classroom-wb-sheets-badge");
+    if (sheetsBadge && wbInfo) {
+      sheetsBadge.textContent = (wbInfo.sheets && wbInfo.sheets.length > 0) ? wbInfo.sheets.join(" | ") : "Consolidated Marks";
+    }
+
     // Scoped assignments load
     appState.assignments = await API.getAssignments(courseId);
     renderAssignmentsList();
@@ -768,3 +833,4 @@ function showToast(message, type = "info") {
     setTimeout(() => toast.remove(), 300);
   }, 3500);
 }
+

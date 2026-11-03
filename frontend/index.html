@@ -68,12 +68,12 @@
   <!-- Main Content Area -->
   <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
 
-    <!-- VIEW 1: MY CLASSROOMS -->
+    <!-- VIEW 1: MY CLASSROOMS & SHARED FACULTY DASHBOARD -->
     <section id="view-classrooms" class="space-y-6">
       <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 class="text-2xl font-black text-slate-900 tracking-tight">My Classrooms</h2>
-          <p class="text-sm text-slate-500 mt-1">Select an authorized Google Classroom course to inspect assignments and evaluate student submissions.</p>
+          <h2 class="text-2xl font-black text-slate-900 tracking-tight">Faculty Multi-Classroom Dashboard</h2>
+          <p class="text-sm text-slate-500 mt-1">Manage multiple courses with independent consolidated marks workbooks, assignment-wise sheets, and zero cross-course data mixing.</p>
         </div>
         <button onclick="loadClassrooms()" class="inline-flex items-center px-3.5 py-2 border border-slate-300 text-xs font-semibold rounded-lg text-slate-700 bg-white hover:bg-slate-50 shadow-xs transition">
           <svg class="w-3.5 h-3.5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
@@ -81,9 +81,33 @@
         </button>
       </div>
 
+      <!-- Shared Global Metrics Banner Across All Classrooms -->
+      <div id="shared-dashboard-metrics" class="grid grid-cols-2 md:grid-cols-5 gap-3.5">
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+          <span class="text-2xs font-bold text-slate-400 uppercase tracking-wider">Active Courses</span>
+          <div id="global-stat-courses" class="text-2xl font-black text-slate-800 mt-1">4</div>
+        </div>
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+          <span class="text-2xs font-bold text-slate-400 uppercase tracking-wider">Total Enrolled</span>
+          <div id="global-stat-students" class="text-2xl font-black text-blue-600 mt-1">231</div>
+        </div>
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+          <span class="text-2xs font-bold text-slate-400 uppercase tracking-wider">Total Assignments</span>
+          <div id="global-stat-assignments" class="text-2xl font-black text-slate-800 mt-1">10</div>
+        </div>
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+          <span class="text-2xs font-bold text-slate-400 uppercase tracking-wider">Total Evaluated</span>
+          <div id="global-stat-evaluated" class="text-2xl font-black text-amber-600 mt-1">0</div>
+        </div>
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs col-span-2 md:col-span-1">
+          <span class="text-2xs font-bold text-slate-400 uppercase tracking-wider">Faculty Approved</span>
+          <div id="global-stat-approved" class="text-2xl font-black text-emerald-600 mt-1">0</div>
+        </div>
+      </div>
+
       <!-- Classrooms Cards Grid -->
-      <div id="classrooms-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <!-- Rendered by JS -->
+      <div id="classrooms-grid" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Rendered by JS with Dedicated Workbook per Classroom -->
       </div>
     </section>
 
@@ -94,9 +118,33 @@
           <h2 id="selected-course-title" class="text-2xl font-black text-slate-900 tracking-tight">Programming in C</h2>
           <p id="selected-course-meta" class="text-xs text-slate-500 mt-1">Section: CSE-A | Enrolled: 66 Students</p>
         </div>
-        <button onclick="navigateTo('classrooms')" class="inline-flex items-center px-3.5 py-2 border border-slate-300 text-xs font-semibold rounded-lg text-slate-700 bg-white hover:bg-slate-50 shadow-xs transition">
-          &larr; Switch Classroom
-        </button>
+        <div class="flex items-center gap-2">
+          <a id="btn-download-course-wb" href="#" target="_blank" class="inline-flex items-center px-3.5 py-2 border border-emerald-300 text-xs font-semibold rounded-lg text-emerald-800 bg-emerald-50 hover:bg-emerald-100 shadow-xs transition">
+            <svg class="w-3.5 h-3.5 mr-1.5 text-emerald-600" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 2v2h8V6H6zm0 4v2h8v-2H6zm0 4v2h5v-2H6z"/></svg>
+            Download Classroom Workbook (.xlsx)
+          </a>
+          <button onclick="navigateTo('classrooms')" class="inline-flex items-center px-3.5 py-2 border border-slate-300 text-xs font-semibold rounded-lg text-slate-700 bg-white hover:bg-slate-50 shadow-xs transition">
+            &larr; Switch Classroom
+          </button>
+        </div>
+      </div>
+
+      <!-- Dedicated Workbook Info Callout -->
+      <div class="p-4 bg-blue-50/60 rounded-xl border border-blue-200/80 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+        <div>
+          <div class="font-bold text-blue-900 flex items-center gap-1.5">
+            <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+            <span>Dedicated Classroom Workbook Active</span>
+          </div>
+          <p class="text-blue-700 text-2xs mt-0.5">
+            Isolated to this course. Maintains assignment columns and dedicated detailed sheets without mixing students or marks.
+          </p>
+          <div class="mt-1 font-mono text-2xs text-blue-800" id="classroom-wb-path-badge"></div>
+        </div>
+        <div class="text-right">
+          <span class="text-2xs text-blue-600 font-semibold uppercase tracking-wider block">Workbook Sheets:</span>
+          <span class="font-medium text-blue-900" id="classroom-wb-sheets-badge">Consolidated Marks</span>
+        </div>
       </div>
 
       <!-- Assignments Table -->
@@ -524,3 +572,4 @@
   <script src="/static/js/app.js"></script>
 </body>
 </html>
+

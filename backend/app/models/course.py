@@ -25,3 +25,4 @@ class ClassroomListResponse(BaseModel):
     faculty_name: str
     faculty_email: str
     courses: List[CourseResponse]
+

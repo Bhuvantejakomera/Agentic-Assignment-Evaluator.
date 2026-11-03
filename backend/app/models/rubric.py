@@ -32,3 +32,4 @@ class RubricGenerateRequest(BaseModel):
     course_id: str
     assignment_id: str
     custom_guidance: Optional[str] = None
+

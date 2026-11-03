@@ -6,12 +6,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = BASE_DIR / "data"
 DATABASE_PATH = DATA_DIR / "evaluation_system.db"
 REPORTS_DIR = BASE_DIR / "reports"
+WORKBOOKS_DIR = BASE_DIR / "workbooks"
 SUBMISSIONS_DIR = DATA_DIR / "submissions"
 SAMPLE_DATA_DIR = BASE_DIR / "sample_data"
 
 # Create directories if not exist
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+WORKBOOKS_DIR.mkdir(parents=True, exist_ok=True)
 SUBMISSIONS_DIR.mkdir(parents=True, exist_ok=True)
 SAMPLE_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -36,3 +38,4 @@ GOOGLE_SCOPES = [
 
 # Master Excel record filename
 DEFAULT_EXCEL_TEMPLATE = BASE_DIR / "Lab_Marks_Record.xlsx"
+

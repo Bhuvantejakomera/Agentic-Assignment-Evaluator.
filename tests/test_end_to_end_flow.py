@@ -46,6 +46,12 @@ def test_complete_multi_classroom_end_to_end_scenario():
     course_b = next(c for c in classrooms if c["name"] == "Data Structures")
     assert course_a["section"] == "CSE-A"
     assert course_b["section"] == "CSE-B"
+    assert course_a["excel_workbook_path"] != course_b["excel_workbook_path"], "Classrooms must use separate workbooks!"
+
+    # Shared faculty dashboard stats
+    dash_res = client.get("/api/classrooms/dashboard/stats")
+    assert dash_res.status_code == 200
+    assert dash_res.json()["total_classrooms"] == 4
 
     # --- Phase 2: Select Classroom A, Inspect Lab 1 ---
     assign_a_res = client.get(f"/api/classrooms/{course_a['id']}/assignments")
@@ -117,6 +123,10 @@ def test_complete_multi_classroom_end_to_end_scenario():
     assert export_a_res.json()["status"] == "success"
     assert export_a_res.json()["total_records_updated"] == 66
 
+    # Verify Classroom A workbook has assignment-wise sheet "Lab-1 Details"
+    wb_a_info = client.get(f"/api/classrooms/{course_a['id']}/workbook/info").json()
+    assert any("Lab-1" in s for s in wb_a_info["sheets"])
+
     # --- Phase 7: Switch to Classroom B (Data Structures), Assignment 2 ---
     assign_b_res = client.get(f"/api/classrooms/{course_b['id']}/assignments")
     assert assign_b_res.status_code == 200
@@ -155,6 +165,11 @@ def test_complete_multi_classroom_end_to_end_scenario():
         f"/api/classrooms/{course_b['id']}/assignments/{assign2_b['id']}/excel/export?target_column_name=Assignment-2"
     )
     assert export_b_res.status_code == 200
+
+    # Verify Classroom B workbook has Assignment-2 Details and does NOT mix with Lab-1
+    wb_b_info = client.get(f"/api/classrooms/{course_b['id']}/workbook/info").json()
+    assert any("Assignment-2" in s for s in wb_b_info["sheets"])
+    assert not any("Lab-1" in s for s in wb_b_info["sheets"]), "Classroom B must not contain Classroom A sheets!"
 
     # --- Phase 8: Return to Classroom A & Verify History Intact Without Reprocessing ---
     # Retrieve evaluations for Classroom A, Lab 1

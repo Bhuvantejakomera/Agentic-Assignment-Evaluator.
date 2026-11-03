@@ -58,3 +58,4 @@ if data:
     result = CodeSandbox.evaluate_python(py_code, test_cases=test_cases)
     assert result.compilation_success is True
     assert result.tests_passed == 1
+

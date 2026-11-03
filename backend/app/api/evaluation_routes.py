@@ -375,3 +375,4 @@ def batch_approve(course_id: str, assignment_id: str, req: BatchApproveRequest):
     AuditService.log_event("BATCH_APPROVED", course_id=course_id, assignment_id=assignment_id, details={"approved_count": count})
 
     return {"approved_count": count, "all_approved": unapproved == 0}
+

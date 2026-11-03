@@ -133,3 +133,4 @@ def approve_rubric(course_id: str, assignment_id: str):
         created_at=row["created_at"],
         approved_at=now_str
     )
+

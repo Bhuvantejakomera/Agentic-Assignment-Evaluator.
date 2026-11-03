@@ -103,3 +103,4 @@ def publish_grades(course_id: str, assignment_id: str, req: PublishRequest):
         message=f"Successfully {action_label} for {len(published_grades)} students.",
         timestamp=now_str
     )
+

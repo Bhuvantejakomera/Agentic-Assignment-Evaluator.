@@ -70,3 +70,4 @@ def serve_index():
     if index_file.exists():
         return FileResponse(str(index_file))
     return {"message": "Frontend not yet generated."}
+

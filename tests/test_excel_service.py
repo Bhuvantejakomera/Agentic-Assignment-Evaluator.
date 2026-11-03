@@ -94,3 +94,34 @@ def test_update_consolidated_workbook_preserves_existing_marks():
         # Find Remarks column dynamically
         remarks_col = next(c for c in range(1, ws_after.max_column + 1) if ws_after.cell(1, c).value == "Remarks")
         assert "Uploaded the wrong PDF" in str(ws_after.cell(3, remarks_col).value)
+
+        # Verify assignment-wise detailed sheet was generated inside the workbook!
+        assert "Lab-1 Details" in wb_after.sheetnames
+        detail_sheet = wb_after["Lab-1 Details"]
+        assert detail_sheet.cell(1, 1).value == "Student ID"
+        assert detail_sheet.cell(2, 1).value == "AP26110010496"
+        assert detail_sheet.cell(2, 5).value == 95.0
+
+def test_ensure_classroom_workbook_creates_isolated_roster():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_workbooks = Path(tmpdir)
+        students = [
+            {"id": "DS001", "name": "Alice Data"},
+            {"id": "DS002", "name": "Bob Queue"}
+        ]
+        wb_path = tmp_workbooks / "data_structures_cse_b_marks_record.xlsx"
+        
+        # Test creating dedicated workbook
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Consolidated Marks"
+        ws.append(["Student ID", "Name", "Assignment-1", "Assignment-2", "Remarks"])
+        for s in students:
+            ws.append([s["id"], s["name"]])
+        wb.save(str(wb_path))
+
+        wb_loaded = openpyxl.load_workbook(str(wb_path))
+        ws_loaded = wb_loaded["Consolidated Marks"]
+        assert ws_loaded.max_row == 3  # Header + 2 students
+        assert ws_loaded.cell(2, 1).value == "DS001"
+        assert ws_loaded.cell(3, 1).value == "DS002"

@@ -27,3 +27,4 @@ class SubmissionResponse(BaseModel):
     state: str = "TURNED_IN"
     attachments: List[SubmissionAttachment] = Field(default_factory=list)
     submission_flags: List[str] = Field(default_factory=list)
+

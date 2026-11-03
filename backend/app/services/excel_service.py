@@ -6,12 +6,13 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from backend.app.config import REPORTS_DIR, BASE_DIR
+from backend.app.config import REPORTS_DIR, WORKBOOKS_DIR, BASE_DIR, DEFAULT_EXCEL_TEMPLATE
 from backend.app.models.evaluation import EvaluationResultResponse
 
 class ExcelService:
-    """Manages classroom-specific Excel workbooks, column mapping, 
-    preserving existing marks, and generating detailed versioned evaluation reports."""
+    """Manages dedicated consolidated marks workbooks for each classroom,
+    supporting assignment-wise columns, assignment-wise detailed sheets,
+    and strict course data isolation."""
 
     @classmethod
     def sanitize_slug(cls, name: str) -> str:
@@ -27,12 +28,96 @@ class ExcelService:
         return out_dir
 
     @classmethod
+    def get_classroom_workbook_path(cls, course_id: str, course_name: str, section: str) -> Path:
+        """Returns the dedicated workbook path for a specific classroom."""
+        name_slug = cls.sanitize_slug(course_name)
+        sec_slug = cls.sanitize_slug(section)
+        return WORKBOOKS_DIR / f"{name_slug}_{sec_slug}_marks_record.xlsx"
+
+    @classmethod
+    def ensure_classroom_workbook(
+        cls,
+        course_id: str,
+        course_name: str,
+        section: str,
+        students: List[Dict[str, str]],
+        assignment_titles: List[str],
+        seed_from_template: Optional[Path] = None
+    ) -> Path:
+        """
+        Creates or initializes the dedicated workbook for a classroom if it doesn't exist.
+        Populated only with students enrolled in this specific course.
+        """
+        wb_path = cls.get_classroom_workbook_path(course_id, course_name, section)
+        if wb_path.exists():
+            return wb_path
+
+        # If seed template provided (e.g. for Course A from Lab_Marks_Record.xlsx)
+        if seed_from_template and seed_from_template.exists():
+            shutil.copy(str(seed_from_template), str(wb_path))
+            # Standardize sheet title to "Consolidated Marks"
+            try:
+                wb_seed = openpyxl.load_workbook(str(wb_path))
+                if "Consolidated Marks" not in wb_seed.sheetnames:
+                    first_ws = wb_seed.active
+                    first_ws.title = "Consolidated Marks"
+                    wb_seed.save(str(wb_path))
+            except Exception:
+                pass
+            return wb_path
+
+        # Create new dedicated workbook for this classroom
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Consolidated Marks"
+
+        # Headers
+        headers = ["Student ID", "Name"]
+        for a_title in assignment_titles:
+            # Short clean header, e.g. "Lab 1 – Algorithms" -> "Lab-1" or title
+            short_title = cls.get_short_column_header(a_title)
+            if short_title not in headers:
+                headers.append(short_title)
+        headers.append("Remarks")
+
+        for col_idx, h in enumerate(headers, 1):
+            cell = ws.cell(1, col_idx, h)
+            cell.font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+            cell.fill = PatternFill(start_color="1F497D", end_color="1F497D", fill_type="solid")
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        # Populate student roster strictly for this course
+        for r_idx, s in enumerate(students, 2):
+            ws.cell(r_idx, 1, s["id"])
+            ws.cell(r_idx, 2, s["name"])
+
+        # Auto-adjust column widths
+        ws.column_dimensions['A'].width = 18
+        ws.column_dimensions['B'].width = 25
+        for col_letter in ['C', 'D', 'E', 'F', 'G', 'H']:
+            ws.column_dimensions[col_letter].width = 14
+        ws.column_dimensions['I'].width = 30
+
+        wb.save(str(wb_path))
+        return wb_path
+
+    @classmethod
+    def get_short_column_header(cls, assignment_title: str) -> str:
+        """Derives short column name e.g. 'Lab 1 – Algorithms' -> 'Lab-1'."""
+        m = re.search(r'(lab|assignment|proj|quiz)[\s_-]*(\d+)', assignment_title, re.IGNORECASE)
+        if m:
+            prefix = m.group(1).capitalize()
+            num = m.group(2)
+            return f"{prefix}-{num}"
+        return assignment_title[:15].strip()
+
+    @classmethod
     def inspect_workbook_columns(cls, workbook_path: Path) -> List[str]:
-        """Reads header row from active sheet of the workbook."""
+        """Reads header row from the Consolidated Marks sheet of the workbook."""
         if not workbook_path.exists():
             return []
         wb = openpyxl.load_workbook(str(workbook_path), data_only=True)
-        ws = wb.active
+        ws = wb["Consolidated Marks"] if "Consolidated Marks" in wb.sheetnames else wb.active
         headers = []
         for col in range(1, ws.max_column + 1):
             val = ws.cell(1, col).value
@@ -41,12 +126,25 @@ class ExcelService:
         return headers
 
     @classmethod
+    def inspect_workbook_sheets(cls, workbook_path: Path) -> List[str]:
+        """Returns sheet names in the classroom workbook."""
+        if not workbook_path.exists():
+            return []
+        wb = openpyxl.load_workbook(str(workbook_path), data_only=True)
+        return wb.sheetnames
+
+    @classmethod
     def map_assignment_to_column(
         cls,
         assignment_title: str,
         available_headers: List[str]
     ) -> Optional[str]:
         """Intelligently detects column name from assignment title (e.g. 'Lab 3' -> 'Lab-3')."""
+        short_header = cls.get_short_column_header(assignment_title).lower()
+        for h in available_headers:
+            if h.lower() == short_header or h.lower() == assignment_title.lower():
+                return h
+
         assign_clean = re.sub(r'[^a-zA-Z0-9]', '', assignment_title).lower()
         for h in available_headers:
             h_clean = re.sub(r'[^a-zA-Z0-9]', '', h).lower()
@@ -65,24 +163,22 @@ class ExcelService:
         run_id: str
     ) -> Tuple[Path, Path]:
         """
-        Updates the target column in the master marks workbook, updates remarks,
-        preserves all other marks, and outputs both a versioned copy and an assignment detail workbook.
+        Updates the target column in the classroom workbook, synchronizes remarks,
+        adds/updates an assignment-wise detailed sheet, preserves all other marks,
+        and saves both the live workbook and versioned reports.
         """
         reports_dir = cls.get_classroom_reports_dir(course_name, assignment_title)
         timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # 1. Load or create workbook
+        # 1. Load or initialize classroom workbook
         if master_workbook_path.exists():
             wb = openpyxl.load_workbook(str(master_workbook_path))
-            ws = wb.active
         else:
             wb = openpyxl.Workbook()
-            ws = wb.active
-            ws.title = "Lab Marks"
-            # Default headers
-            headers = ["Student ID", "Name", "Lab-1", "Lab-2", "Lab-3", "Lab-4", "Lab-5", "Remarks"]
-            for col_idx, h in enumerate(headers, 1):
-                ws.cell(1, col_idx, h)
+
+        # Find consolidated sheet
+        ws_name = "Consolidated Marks" if "Consolidated Marks" in wb.sheetnames else ("Lab Marks" if "Lab Marks" in wb.sheetnames else wb.sheetnames[0])
+        ws = wb[ws_name]
 
         # 2. Map existing headers to column indices
         header_to_col: Dict[str, int] = {}
@@ -128,16 +224,15 @@ class ExcelService:
 
             row_idx = student_row_map.get(sid_clean) or student_row_map.get(name_clean)
             if not row_idx:
-                # Add student to workbook if not present
+                # Add student to this classroom's workbook if not present
                 row_idx = ws.max_row + 1
                 ws.cell(row_idx, 1, res.student_id)
                 ws.cell(row_idx, 2, res.student_name)
                 student_row_map[sid_clean] = row_idx
 
-            # Determine score to write (faculty adjusted takes precedence)
             effective_score = res.faculty_adjusted_score if res.faculty_adjusted_score is not None else res.final_score
             
-            # If wrong PDF or unreadable, don't award marks
+            # If wrong PDF or unreadable, leave blank in assignment column
             if "WRONG_PDF" in res.flags or "UNREADABLE" in res.flags or "MISSING" in res.flags:
                 ws.cell(row_idx, target_col_idx, None)
             else:
@@ -151,7 +246,7 @@ class ExcelService:
                     combined = f"{curr_remarks}, {new_remark}".strip(", ") if curr_remarks else new_remark
                     ws.cell(row_idx, remarks_col_idx, combined)
 
-        # Style header row nicely
+        # Style header row of consolidated sheet
         header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
         header_fill = PatternFill(start_color="1F497D", end_color="1F497D", fill_type="solid")
         for c in range(1, ws.max_column + 1):
@@ -160,17 +255,24 @@ class ExcelService:
             cell.fill = header_fill
             cell.alignment = Alignment(horizontal="center", vertical="center")
 
-        # Save versioned consolidated master workbook
+        # 5. Add or Update Assignment-Wise Detailed Sheet inside the classroom workbook!
+        clean_assign_sheet_title = cls.get_short_column_header(assignment_title) + " Details"
+        if clean_assign_sheet_title in wb.sheetnames:
+            detail_sheet = wb[clean_assign_sheet_title]
+            detail_sheet.delete_rows(1, detail_sheet.max_row + 1)
+        else:
+            detail_sheet = wb.create_sheet(title=clean_assign_sheet_title)
+
+        cls._populate_detailed_sheet(detail_sheet, evaluation_results)
+
+        # 6. Save the classroom master workbook
+        wb.save(str(master_workbook_path))
+
+        # 7. Also save versioned copy in reports/
         versioned_wb_path = reports_dir / f"Consolidated_Marks_v{run_id[:8]}_{timestamp_str}.xlsx"
         wb.save(str(versioned_wb_path))
 
-        # Also update the main workbook in place if it is the local master
-        try:
-            wb.save(str(master_workbook_path))
-        except Exception:
-            pass
-
-        # 5. Generate detailed assignment-level evaluation report
+        # 8. Standalone detailed assignment evaluation report
         detail_path = cls.generate_detailed_assignment_report(
             course_name=course_name,
             assignment_title=assignment_title,
@@ -181,6 +283,55 @@ class ExcelService:
         )
 
         return versioned_wb_path, detail_path
+
+    @classmethod
+    def _populate_detailed_sheet(
+        cls,
+        ws,
+        evaluation_results: List[EvaluationResultResponse]
+    ):
+        """Populates an assignment-specific detailed sheet with criterion breakdowns."""
+        headers = [
+            "Student ID", "Student Name", "Raw Score", "Late Penalty", 
+            "Final Score", "Faculty Override", "Status", "Remarks", "Criteria Breakdown", "Evidence Snippet"
+        ]
+        for col_idx, h in enumerate(headers, 1):
+            cell = ws.cell(1, col_idx, h)
+            cell.font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+            cell.fill = PatternFill(start_color="244061", end_color="244061", fill_type="solid")
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        for row_idx, res in enumerate(evaluation_results, 2):
+            ws.cell(row_idx, 1, res.student_id)
+            ws.cell(row_idx, 2, res.student_name)
+            ws.cell(row_idx, 3, res.raw_score)
+            ws.cell(row_idx, 4, res.late_penalty)
+            ws.cell(row_idx, 5, res.final_score)
+            ws.cell(row_idx, 6, res.faculty_adjusted_score if res.faculty_adjusted_score is not None else "-")
+
+            status_desc = "Approved" if res.faculty_approved else "Draft"
+            if res.flags:
+                status_desc += f" ({', '.join(res.flags)})"
+            ws.cell(row_idx, 7, status_desc)
+            ws.cell(row_idx, 8, res.faculty_remarks or "")
+
+            crit_summaries = [f"{c.criterion_name}: {c.awarded_marks}/{c.max_marks} [{c.status}]" for c in res.criteria_breakdown]
+            evidences = [f"[{c.criterion_name}] {c.evidence}" for c in res.criteria_breakdown if c.evidence]
+
+            ws.cell(row_idx, 9, "\n".join(crit_summaries))
+            ws.cell(row_idx, 10, "\n".join(evidences[:2]))
+
+        # Column widths
+        ws.column_dimensions['A'].width = 16
+        ws.column_dimensions['B'].width = 24
+        ws.column_dimensions['C'].width = 12
+        ws.column_dimensions['D'].width = 12
+        ws.column_dimensions['E'].width = 12
+        ws.column_dimensions['F'].width = 16
+        ws.column_dimensions['G'].width = 18
+        ws.column_dimensions['H'].width = 24
+        ws.column_dimensions['I'].width = 40
+        ws.column_dimensions['J'].width = 45
 
     @classmethod
     def generate_detailed_assignment_report(
@@ -195,48 +346,7 @@ class ExcelService:
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Detailed Evaluation"
-
-        # Headers
-        headers = [
-            "Student ID", "Student Name", "Raw Score", "Late Penalty", 
-            "Final Score", "Faculty Override", "Status", "Remarks", "Criteria Details", "Evidence Snippet"
-        ]
-        for col_idx, h in enumerate(headers, 1):
-            ws.cell(1, col_idx, h)
-
-        for row_idx, res in enumerate(evaluation_results, 2):
-            ws.cell(row_idx, 1, res.student_id)
-            ws.cell(row_idx, 2, res.student_name)
-            ws.cell(row_idx, 3, res.raw_score)
-            ws.cell(row_idx, 4, res.late_penalty)
-            ws.cell(row_idx, 5, res.final_score)
-            ws.cell(row_idx, 6, res.faculty_adjusted_score if res.faculty_adjusted_score is not None else "-")
-            
-            status_desc = "Approved" if res.faculty_approved else "Draft"
-            if res.flags:
-                status_desc += f" ({', '.join(res.flags)})"
-            ws.cell(row_idx, 7, status_desc)
-            ws.cell(row_idx, 8, res.faculty_remarks or "")
-
-            # Criteria details summary
-            crit_summaries = []
-            evidences = []
-            for c in res.criteria_breakdown:
-                crit_summaries.append(f"{c.criterion_name}: {c.awarded_marks}/{c.max_marks} [{c.status}]")
-                if c.evidence:
-                    evidences.append(f"[{c.criterion_name}] {c.evidence}")
-
-            ws.cell(row_idx, 9, "\n".join(crit_summaries))
-            ws.cell(row_idx, 10, "\n".join(evidences[:2]))
-
-        # Styling
-        header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-        header_fill = PatternFill(start_color="244061", end_color="244061", fill_type="solid")
-        for c in range(1, len(headers) + 1):
-            cell = ws.cell(1, c)
-            cell.font = header_font
-            cell.fill = header_fill
-            cell.alignment = Alignment(horizontal="center", vertical="center")
+        cls._populate_detailed_sheet(ws, evaluation_results)
 
         detail_file = reports_dir / f"Assignment_Evaluation_Detail_{timestamp_str}.xlsx"
         wb.save(str(detail_file))

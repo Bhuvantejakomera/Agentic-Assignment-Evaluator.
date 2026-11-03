@@ -221,3 +221,4 @@ class DocumentExtractor:
         )
 
         return attachments_meta, extracted_model
+

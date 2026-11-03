@@ -48,3 +48,25 @@ def test_switching_classrooms_preserves_independent_state():
 
     assert c1_count == 66
     assert c2_count == 60
+
+def test_separate_consolidated_workbook_per_classroom():
+    """Verifies that each classroom has a dedicated separate workbook file in workbooks/."""
+    courses = ClassroomService.get_all_courses(ClassroomService.DEFAULT_FACULTY_ID)
+    workbook_paths = [c.excel_workbook_path for c in courses]
+    
+    # Each course must have a non-null distinct workbook path
+    assert all(wb is not None for wb in workbook_paths)
+    assert len(set(workbook_paths)) == len(courses), "Classrooms must not share workbook files!"
+
+    # Verify filenames correspond to course slugs
+    for c in courses:
+        assert c.name.lower().replace(" ", "_") in c.excel_workbook_path.lower()
+
+def test_shared_faculty_dashboard_stats():
+    """Verifies aggregated metrics for the shared faculty dashboard across all classrooms."""
+    stats = ClassroomService.get_faculty_dashboard_stats(ClassroomService.DEFAULT_FACULTY_ID)
+    assert stats["total_classrooms"] == 4
+    assert stats["total_students"] == 66 + 60 + 55 + 50
+    assert stats["total_assignments"] >= 10
+    assert len(stats["classrooms"]) == 4
+

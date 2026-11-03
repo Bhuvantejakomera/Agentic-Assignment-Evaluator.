@@ -9,7 +9,8 @@ from backend.app.config import (
     BASE_DIR,
     DEFAULT_EXCEL_TEMPLATE,
     SUBMISSIONS_DIR,
-    SAMPLE_DATA_DIR
+    SAMPLE_DATA_DIR,
+    WORKBOOKS_DIR
 )
 from backend.app.database import db_session
 from backend.app.models.course import CourseResponse
@@ -17,6 +18,7 @@ from backend.app.models.assignment import AssignmentResponse
 from backend.app.models.submission import SubmissionResponse, SubmissionAttachment, ExtractedContentModel
 from backend.app.services.document_extractor import DocumentExtractor
 from backend.app.services.audit_service import AuditService
+from backend.app.services.excel_service import ExcelService
 
 class ClassroomService:
     """Handles course discovery, assignment retrieval, student rosters, 
@@ -42,12 +44,7 @@ class ClassroomService:
                     (cls.DEFAULT_FACULTY_ID, cls.DEFAULT_FACULTY_EMAIL, cls.DEFAULT_FACULTY_NAME, now_str)
                 )
 
-            # Check courses count
-            course_count = conn.execute("SELECT COUNT(*) as c FROM courses").fetchone()["c"]
-            if course_count > 0:
-                return
-
-            # Read 66 students from Lab_Marks_Record.xlsx
+            # Read students from Lab_Marks_Record.xlsx
             students = []
             if DEFAULT_EXCEL_TEMPLATE.exists():
                 wb = openpyxl.load_workbook(str(DEFAULT_EXCEL_TEMPLATE), data_only=True)
@@ -73,6 +70,34 @@ class ClassroomService:
                     (s["id"], s["name"], s["email"])
                 )
 
+            # Initialize dedicated workbooks for each classroom
+            wb_c1 = ExcelService.ensure_classroom_workbook(
+                "course-c-101", "Programming in C", "CSE-A", students,
+                ["Lab 1", "Lab 2", "Lab 3", "Lab 4"], seed_from_template=DEFAULT_EXCEL_TEMPLATE
+            )
+            wb_c2 = ExcelService.ensure_classroom_workbook(
+                "course-ds-201", "Data Structures", "CSE-B", students[:60],
+                ["Assignment 1", "Assignment 2"]
+            )
+            wb_c3 = ExcelService.ensure_classroom_workbook(
+                "course-py-301", "Python Programming", "AIML-A", students[:55],
+                ["Lab 1", "Lab 2"]
+            )
+            wb_c4 = ExcelService.ensure_classroom_workbook(
+                "course-ai-401", "Artificial Intelligence", "AIML-B", students[:50],
+                ["Lab 1", "Project"]
+            )
+
+            # Check courses count
+            course_count = conn.execute("SELECT COUNT(*) as c FROM courses").fetchone()["c"]
+            if course_count > 0:
+                # Update courses with their dedicated workbooks if needed
+                conn.execute("UPDATE courses SET excel_workbook_path = ? WHERE id = 'course-c-101'", (str(wb_c1),))
+                conn.execute("UPDATE courses SET excel_workbook_path = ? WHERE id = 'course-ds-201'", (str(wb_c2),))
+                conn.execute("UPDATE courses SET excel_workbook_path = ? WHERE id = 'course-py-301'", (str(wb_c3),))
+                conn.execute("UPDATE courses SET excel_workbook_path = ? WHERE id = 'course-ai-401'", (str(wb_c4),))
+                return
+
             now_str = datetime.now().isoformat()
 
             # Course 1: Programming in C (CSE-A)
@@ -84,7 +109,7 @@ class ClassroomService:
                 """,
                 (c1_id, cls.DEFAULT_FACULTY_ID, "Programming in C", "CSE-A",
                  "Foundations of C programming, pointers, algorithms, and modular design.", "AL-302", "ACTIVE",
-                 len(students), 4, str(DEFAULT_EXCEL_TEMPLATE), now_str, now_str)
+                 len(students), 4, str(wb_c1), now_str, now_str)
             )
 
             # Course 2: Data Structures (CSE-B)
@@ -96,7 +121,7 @@ class ClassroomService:
                 """,
                 (c2_id, cls.DEFAULT_FACULTY_ID, "Data Structures", "CSE-B",
                  "Linear and non-linear data structures, trees, graphs, stacks, and complexity analysis.", "BL-204", "ACTIVE",
-                 60, 2, str(DEFAULT_EXCEL_TEMPLATE), now_str, now_str)
+                 60, 2, str(wb_c2), now_str, now_str)
             )
 
             # Course 3: Python Programming (AIML-A)
@@ -108,7 +133,7 @@ class ClassroomService:
                 """,
                 (c3_id, cls.DEFAULT_FACULTY_ID, "Python Programming", "AIML-A",
                  "Advanced Python, data handling, functional programming, and computational thinking.", "CL-101", "ACTIVE",
-                 55, 2, None, now_str, now_str)
+                 55, 2, str(wb_c3), now_str, now_str)
             )
 
             # Course 4: Artificial Intelligence (AIML-B)
@@ -120,7 +145,7 @@ class ClassroomService:
                 """,
                 (c4_id, cls.DEFAULT_FACULTY_ID, "Artificial Intelligence", "AIML-B",
                  "Informed search algorithms, heuristic optimization, and knowledge representation.", "DL-405", "ACTIVE",
-                 50, 2, None, now_str, now_str)
+                 50, 2, str(wb_c4), now_str, now_str)
             )
 
             # Enroll students into Course 1 (CSE-A)
@@ -478,3 +503,70 @@ class ClassroomService:
                     rubric_id=rub_id
                 ))
             return assignments
+
+    @classmethod
+    def get_faculty_dashboard_stats(cls, faculty_id: str) -> Dict[str, Any]:
+        """Calculates global aggregated metrics across all classrooms for the shared faculty dashboard."""
+        with db_session() as conn:
+            courses = conn.execute(
+                "SELECT id, name, section, enrolled_count, assignments_count, excel_workbook_path, status FROM courses WHERE faculty_id = ?",
+                (faculty_id,)
+            ).fetchall()
+
+            total_courses = len(courses)
+            total_students = sum(c["enrolled_count"] or 0 for c in courses)
+            total_assignments = sum(c["assignments_count"] or 0 for c in courses)
+
+            # Global evaluation counts
+            eval_stats = conn.execute(
+                """
+                SELECT 
+                    COUNT(*) as total_evaluated,
+                    SUM(CASE WHEN faculty_approved = 1 THEN 1 ELSE 0 END) as total_approved
+                FROM evaluation_results
+                """
+            ).fetchone()
+
+            total_published = conn.execute("SELECT COUNT(*) as c FROM publish_logs WHERE faculty_id = ?", (faculty_id,)).fetchone()["c"]
+
+            course_summaries = []
+            for c in courses:
+                cid = c["id"]
+                c_eval = conn.execute(
+                    """
+                    SELECT 
+                        COUNT(*) as evaluated,
+                        SUM(CASE WHEN faculty_approved = 1 THEN 1 ELSE 0 END) as approved
+                    FROM evaluation_results
+                    WHERE course_id = ?
+                    """,
+                    (cid,)
+                ).fetchone()
+
+                wb_path = c["excel_workbook_path"]
+                wb_exists = bool(wb_path and Path(wb_path).exists())
+
+                course_summaries.append({
+                    "course_id": cid,
+                    "name": c["name"],
+                    "section": c["section"],
+                    "status": c["status"],
+                    "enrolled_count": c["enrolled_count"],
+                    "assignments_count": c["assignments_count"],
+                    "evaluated_count": c_eval["evaluated"] if c_eval else 0,
+                    "approved_count": c_eval["approved"] if (c_eval and c_eval["approved"]) else 0,
+                    "workbook_path": wb_path,
+                    "workbook_exists": wb_exists
+                })
+
+            return {
+                "faculty_id": faculty_id,
+                "total_classrooms": total_courses,
+                "total_students": total_students,
+                "total_assignments": total_assignments,
+                "total_evaluated": eval_stats["total_evaluated"] if eval_stats else 0,
+                "total_approved": eval_stats["total_approved"] if (eval_stats and eval_stats["total_approved"]) else 0,
+                "total_published": total_published,
+                "classrooms": course_summaries
+            }
+

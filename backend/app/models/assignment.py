@@ -26,3 +26,4 @@ class AssignmentResponse(AssignmentBase):
 class AssignmentDetailResponse(AssignmentResponse):
     course_name: str
     course_section: str
+
