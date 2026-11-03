@@ -6,4 +6,7 @@ __pycache__/
 *.db-journal
 data/*.db
 data/submissions/
+credentials.json
+token.json
+
 

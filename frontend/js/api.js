@@ -7,8 +7,43 @@ const API = {
     const res = await fetch(`${API_BASE}/api/auth/faculty`);
     return res.json();
   },
-  async connectGoogle() {
-    const res = await fetch(`${API_BASE}/api/auth/connect-google`, { method: "POST" });
+  async getGoogleClientInfo() {
+    const res = await fetch(`${API_BASE}/api/auth/google/client-info`);
+    return res.json();
+  },
+  async uploadCredentialsFile(formData) {
+    const res = await fetch(`${API_BASE}/api/auth/google/upload-credentials`, {
+      method: "POST",
+      body: formData
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Failed to upload credentials.");
+    }
+    return res.json();
+  },
+  async saveCredentialsJson(payload) {
+    const res = await fetch(`${API_BASE}/api/auth/google/save-credentials`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Failed to save credentials.");
+    }
+    return res.json();
+  },
+  async syncLiveGoogle() {
+    const res = await fetch(`${API_BASE}/api/auth/google/sync-live`, { method: "POST" });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Failed to sync live Google Classroom.");
+    }
+    return res.json();
+  },
+  async disconnectGoogle() {
+    const res = await fetch(`${API_BASE}/api/auth/disconnect`, { method: "POST" });
     return res.json();
   },
 

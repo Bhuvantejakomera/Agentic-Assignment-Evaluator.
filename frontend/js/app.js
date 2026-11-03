@@ -29,8 +29,18 @@ async function loadFaculty() {
     document.getElementById("faculty-email").textContent = appState.faculty.email;
     const badge = document.getElementById("google-status-badge");
     if (appState.faculty.is_connected_google) {
-      badge.className = "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 border border-emerald-300";
-      badge.innerHTML = `<span class="w-2 h-2 mr-1.5 bg-emerald-500 rounded-full"></span>Google Classroom Connected`;
+      badge.className = "inline-flex items-center px-2.5 py-1 rounded-full text-2xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300 hover:bg-emerald-200 transition cursor-pointer";
+      badge.innerHTML = `<span class="w-2 h-2 mr-1.5 bg-emerald-500 rounded-full"></span>Google Connected`;
+    } else {
+      badge.className = "inline-flex items-center px-2.5 py-1 rounded-full text-2xs font-semibold bg-slate-100 text-slate-700 border border-slate-300 hover:bg-slate-200 transition cursor-pointer";
+      badge.innerHTML = `<span class="w-2 h-2 mr-1.5 bg-slate-400 rounded-full"></span>Connect Google`;
+    }
+
+    // Check if returning from Google OAuth redirect
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get("auth") === "google_success") {
+      showToast(`Signed in to Google as ${urlParams.get("email") || appState.faculty.email}!`, "success");
+      window.history.replaceState({}, document.title, window.location.pathname);
     }
   } catch (err) {
     console.error("Failed to load faculty:", err);
@@ -832,5 +842,105 @@ function showToast(message, type = "info") {
     toast.style.opacity = "0";
     setTimeout(() => toast.remove(), 300);
   }, 3500);
+}
+
+// --- Google Auth Modal & Live Sync ---
+async function openGoogleAuthModal() {
+  showLoading(true);
+  try {
+    const clientInfo = await API.getGoogleClientInfo();
+    const faculty = await API.getFaculty();
+    appState.faculty = faculty;
+
+    document.getElementById("modal-client-id").textContent = clientInfo.client_id || "Not configured (credentials.json missing)";
+    const statusEl = document.getElementById("modal-google-status");
+    const connectedActions = document.getElementById("google-connected-actions");
+    const loginAction = document.getElementById("google-login-action");
+    const credForm = document.getElementById("credentials-setup-form");
+
+    if (faculty.is_connected_google) {
+      statusEl.className = "font-bold text-emerald-600";
+      statusEl.textContent = `Connected (${faculty.email})`;
+      document.getElementById("google-connected-email").textContent = `Active Account: ${faculty.email}`;
+      connectedActions.classList.remove("hidden");
+      loginAction.classList.add("hidden");
+      credForm.classList.add("hidden");
+    } else {
+      statusEl.className = "font-bold text-amber-600";
+      statusEl.textContent = "Not connected";
+      connectedActions.classList.add("hidden");
+      loginAction.classList.remove("hidden");
+      if (!clientInfo.configured) {
+        credForm.classList.remove("hidden");
+      }
+    }
+
+    document.getElementById("google-auth-modal").classList.remove("hidden");
+  } catch (err) {
+    showToast("Error loading Google connection info: " + err.message, "error");
+  } finally {
+    showLoading(false);
+  }
+}
+
+function closeGoogleAuthModal() {
+  document.getElementById("google-auth-modal").classList.add("hidden");
+}
+
+function toggleCredentialsForm() {
+  const form = document.getElementById("credentials-setup-form");
+  form.classList.toggle("hidden");
+}
+
+async function uploadCredentialsJson() {
+  const fileInput = document.getElementById("input-credentials-file");
+  if (!fileInput.files || fileInput.files.length === 0) {
+    showToast("Please select your credentials.json file first.", "error");
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("file", fileInput.files[0]);
+
+  showLoading(true, "Saving credentials.json...");
+  try {
+    const res = await API.uploadCredentialsFile(formData);
+    showToast(res.message, "success");
+    await openGoogleAuthModal();
+  } catch (err) {
+    showToast("Failed to upload credentials: " + err.message, "error");
+  } finally {
+    showLoading(false);
+  }
+}
+
+async function syncLiveClassrooms() {
+  showLoading(true, "Connecting to Google Classroom API and synchronizing courses...");
+  try {
+    const res = await API.syncLiveGoogle();
+    showToast(res.message, "success");
+    closeGoogleAuthModal();
+    await loadClassrooms();
+  } catch (err) {
+    showToast("Live Sync Error: " + err.message, "error");
+  } finally {
+    showLoading(false);
+  }
+}
+
+async function disconnectGoogleAccount() {
+  if (!confirm("Are you sure you want to disconnect your Google account?")) return;
+  showLoading(true, "Disconnecting Google account...");
+  try {
+    await API.disconnectGoogle();
+    showToast("Google account disconnected.", "info");
+    closeGoogleAuthModal();
+    await loadFaculty();
+    await loadClassrooms();
+  } catch (err) {
+    showToast("Error: " + err.message, "error");
+  } finally {
+    showLoading(false);
+  }
 }
 
