@@ -83,3 +83,24 @@ def test_disconnect_google():
     fac = client.get("/api/auth/faculty").json()
     assert fac["is_connected_google"] is False
 
+def test_direct_faculty_login():
+    res = client.post("/api/auth/direct-login", json={
+        "name": "Prof. Bhuvan Teja",
+        "email": "chandragajjela2003@gmail.com"
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "success"
+    assert data["faculty"]["is_connected_google"] is True
+
+    # Faculty profile check
+    fac = client.get("/api/auth/faculty").json()
+    assert fac["name"] == "Prof. Bhuvan Teja"
+    assert fac["email"] == "chandragajjela2003@gmail.com"
+    assert fac["is_connected_google"] is True
+
+    # Check live sync in direct mode
+    sync_res = client.post("/api/auth/google/sync-live")
+    assert sync_res.status_code == 200
+    assert sync_res.json()["mode"] == "direct"
+

@@ -28,12 +28,15 @@ async function loadFaculty() {
     document.getElementById("faculty-name").textContent = appState.faculty.name;
     document.getElementById("faculty-email").textContent = appState.faculty.email;
     const badge = document.getElementById("google-status-badge");
+    const headerDirectBtn = document.getElementById("btn-header-direct-login");
     if (appState.faculty.is_connected_google) {
+      if (headerDirectBtn) headerDirectBtn.classList.add("hidden");
       badge.className = "inline-flex items-center px-2.5 py-1 rounded-full text-2xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300 hover:bg-emerald-200 transition cursor-pointer";
-      badge.innerHTML = `<span class="w-2 h-2 mr-1.5 bg-emerald-500 rounded-full"></span>Google Connected`;
+      badge.innerHTML = `<span class="w-2 h-2 mr-1.5 bg-emerald-500 rounded-full"></span>Connected`;
     } else {
+      if (headerDirectBtn) headerDirectBtn.classList.remove("hidden");
       badge.className = "inline-flex items-center px-2.5 py-1 rounded-full text-2xs font-semibold bg-slate-100 text-slate-700 border border-slate-300 hover:bg-slate-200 transition cursor-pointer";
-      badge.innerHTML = `<span class="w-2 h-2 mr-1.5 bg-slate-400 rounded-full"></span>Connect Google`;
+      badge.innerHTML = `<span class="w-2 h-2 mr-1.5 bg-slate-400 rounded-full"></span>Google Settings`;
     }
 
     // Check if returning from Google OAuth redirect
@@ -858,6 +861,10 @@ async function openGoogleAuthModal() {
     const loginAction = document.getElementById("google-login-action");
     const credForm = document.getElementById("credentials-setup-form");
 
+    const directCard = document.getElementById("direct-login-card");
+    const oauthDivider = document.getElementById("oauth-divider");
+    const cloudSetup = document.getElementById("google-cloud-setup-section");
+
     if (faculty.is_connected_google) {
       statusEl.className = "font-bold text-emerald-600";
       statusEl.textContent = `Connected (${faculty.email})`;
@@ -865,23 +872,64 @@ async function openGoogleAuthModal() {
       connectedActions.classList.remove("hidden");
       loginAction.classList.add("hidden");
       credForm.classList.add("hidden");
+      if (directCard) directCard.classList.add("hidden");
+      if (oauthDivider) oauthDivider.classList.add("hidden");
     } else {
-      statusEl.className = "font-bold text-amber-600";
+      statusEl.className = "font-bold text-blue-600";
+      statusEl.textContent = "Direct Login Available";
+      connectedActions.classList.add("hidden");
+      if (directCard) directCard.classList.remove("hidden");
+      if (oauthDivider) oauthDivider.classList.remove("hidden");
+
       if (clientInfo.configured) {
-        statusEl.textContent = "Ready to Connect";
         loginAction.classList.remove("hidden");
         credForm.classList.add("hidden");
       } else {
-        statusEl.textContent = "Configuration Required (Upload credentials.json)";
         loginAction.classList.add("hidden");
         credForm.classList.remove("hidden");
       }
-      connectedActions.classList.add("hidden");
     }
 
     document.getElementById("google-auth-modal").classList.remove("hidden");
   } catch (err) {
     showToast("Error loading Google connection info: " + err.message, "error");
+  } finally {
+    showLoading(false);
+  }
+}
+
+function toggleCustomDirectLogin() {
+  const el = document.getElementById("custom-direct-login-fields");
+  if (el) el.classList.toggle("hidden");
+}
+
+async function handleDirectFacultyLogin() {
+  showLoading(true, "Signing in directly as Prof. Bhuvan Teja...");
+  try {
+    const res = await API.directLogin("Prof. Bhuvan Teja", "chandragajjela2003@gmail.com");
+    showToast(res.message, "success");
+    closeGoogleAuthModal();
+    await loadFaculty();
+    await loadClassrooms();
+  } catch (err) {
+    showToast("Direct Login Error: " + err.message, "error");
+  } finally {
+    showLoading(false);
+  }
+}
+
+async function handleCustomDirectLogin() {
+  const name = document.getElementById("custom-faculty-name").value || "Prof. Bhuvan Teja";
+  const email = document.getElementById("custom-faculty-email").value || "chandragajjela2003@gmail.com";
+  showLoading(true, `Signing in as ${name}...`);
+  try {
+    const res = await API.directLogin(name, email);
+    showToast(res.message, "success");
+    closeGoogleAuthModal();
+    await loadFaculty();
+    await loadClassrooms();
+  } catch (err) {
+    showToast("Direct Login Error: " + err.message, "error");
   } finally {
     showLoading(false);
   }

@@ -46,6 +46,18 @@ const API = {
     const res = await fetch(`${API_BASE}/api/auth/disconnect`, { method: "POST" });
     return res.json();
   },
+  async directLogin(name, email) {
+    const res = await fetch(`${API_BASE}/api/auth/direct-login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, email })
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Direct login failed.");
+    }
+    return res.json();
+  },
 
   // Classrooms
   async getClassrooms() {

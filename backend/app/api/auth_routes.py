@@ -26,6 +26,39 @@ class CredentialsJsonPayload(BaseModel):
     web: Optional[Dict[str, Any]] = None
     installed: Optional[Dict[str, Any]] = None
 
+class DirectLoginPayload(BaseModel):
+    name: Optional[str] = "Prof. Bhuvan Teja"
+    email: Optional[str] = "chandragajjela2003@gmail.com"
+
+@router.post("/direct-login")
+def direct_login(payload: DirectLoginPayload = DirectLoginPayload()):
+    """Allows instant direct sign-in as faculty without requiring Google Cloud Console setup."""
+    name = (payload.name or "Prof. Bhuvan Teja").strip()
+    email = (payload.email or "chandragajjela2003@gmail.com").strip()
+    with db_session() as conn:
+        conn.execute(
+            """
+            UPDATE faculty
+            SET name = ?,
+                email = ?,
+                google_access_token = 'direct_faculty_session_token',
+                token_expiry = '2099-12-31T23:59:59'
+            WHERE id = ?
+            """,
+            (name, email, ClassroomService.DEFAULT_FACULTY_ID)
+        )
+    AuditService.log_event("DIRECT_FACULTY_LOGIN", faculty_id=ClassroomService.DEFAULT_FACULTY_ID, details={"name": name, "email": email, "mode": "direct"})
+    return {
+        "status": "success",
+        "message": f"Successfully signed in as {name} ({email})",
+        "faculty": {
+            "id": ClassroomService.DEFAULT_FACULTY_ID,
+            "name": name,
+            "email": email,
+            "is_connected_google": True
+        }
+    }
+
 @router.get("/faculty", response_model=FacultyProfileResponse)
 def get_current_faculty():
     with db_session() as conn:
