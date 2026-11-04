@@ -125,3 +125,50 @@ def test_ensure_classroom_workbook_creates_isolated_roster():
         assert ws_loaded.max_row == 3  # Header + 2 students
         assert ws_loaded.cell(2, 1).value == "DS001"
         assert ws_loaded.cell(3, 1).value == "DS002"
+
+def test_ensure_classroom_workbook_natural_sorting_and_parsed_students():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        test_wb_path = Path(tmpdir) / "test_course_marks.xlsx"
+        
+        # Jumbled assignment titles returned from Classroom
+        raw_assignments = [
+            "Lab-9",
+            "Lab -8",
+            "Lab-6",
+            "Lab-7",
+            "Lab-5",
+            "Lab-4",
+            "Lab-3",
+            "Lab-2  1. Simple Interest",
+            "Lab-1. Hello World"
+        ]
+
+        students = [
+            {"id": "AP26110010495", "name": "Sayanthkumar D"},
+            {"id": "AP26110010496", "name": "Aditya kumar R"}
+        ]
+
+        # Call ensure_classroom_workbook
+        from unittest.mock import patch
+        with patch.object(ExcelService, "get_classroom_workbook_path", return_value=test_wb_path):
+            created_path = ExcelService.ensure_classroom_workbook(
+                course_id="test-101",
+                course_name="Test Course",
+                section="Section A",
+                students=students,
+                assignment_titles=raw_assignments,
+                seed_from_template=DEFAULT_EXCEL_TEMPLATE,
+                force_refresh=True
+            )
+
+        wb = openpyxl.load_workbook(str(created_path))
+        ws = wb["Consolidated Marks"]
+        headers = [ws.cell(1, c).value for c in range(1, ws.max_column + 1)]
+        
+        # Verify natural order of lab headers
+        expected_headers = ['Student ID', 'Name', 'Lab-1', 'Lab-2', 'Lab-3', 'Lab-4', 'Lab-5', 'Lab-6', 'Lab-7', 'Lab-8', 'Lab-9', 'Remarks']
+        assert headers == expected_headers
+        
+        # Verify student IDs are institutional roll numbers, not Google numeric IDs
+        assert ws.cell(2, 1).value in ("AP26110010495", "AP26110010496")
+        assert not str(ws.cell(2, 1).value).isdigit()

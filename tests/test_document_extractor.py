@@ -39,3 +39,16 @@ def test_process_multiple_attachments():
         assert "theoretical notes" in extracted.text_content
         assert len(extracted.code_snippets) >= 1
 
+def test_extract_screenshot_and_embedded_images():
+    # Test OCR extraction with the student screenshot deliverable if available
+    screenshot_path = Path("/Users/bhuvanteja/.gemini/antigravity/brain/48e7a178-c6d4-4005-9776-6ab25360fe22/.user_uploaded/media_1793733490006_b1e07f2c.jpg")
+    if screenshot_path.exists():
+        meta, extracted = DocumentExtractor.process_attachments([str(screenshot_path)])
+        assert len(meta) == 1
+        assert meta[0].is_readable is True
+        assert len(extracted.code_snippets) >= 1
+        assert extracted.code_snippets[0]["language"] == "c"
+        assert "main" in extracted.code_snippets[0]["code"]
+        assert extracted.word_count > 50
+
+

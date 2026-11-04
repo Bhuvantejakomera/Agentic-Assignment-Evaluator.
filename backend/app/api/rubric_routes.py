@@ -100,8 +100,8 @@ def save_rubric(course_id: str, assignment_id: str, rubric_data: RubricCreate):
     )
 
 @router.post("/approve", response_model=RubricResponse)
-def approve_rubric(course_id: str, assignment_id: str):
-    """Faculty explicitly approves the rubric before evaluation can be launched."""
+def approve_rubric(course_id: str, assignment_id: str, req: Optional[RubricCreate] = None):
+    """Faculty explicitly approves the rubric before evaluation can be launched, optionally saving modified criteria."""
     now_str = datetime.now().isoformat()
     with db_session() as conn:
         row = conn.execute(
@@ -109,28 +109,62 @@ def approve_rubric(course_id: str, assignment_id: str):
             (course_id, assignment_id)
         ).fetchone()
 
-        if not row:
-            raise HTTPException(status_code=400, detail="No rubric exists to approve. Please generate or create one first.")
+        if req and req.criteria:
+            criteria_json = json.dumps([c.model_dump() for c in req.criteria])
+            total_marks = req.total_max_marks
+            late_penalty = req.late_penalty_percent
 
-        conn.execute(
-            "UPDATE rubrics SET status = 'APPROVED', approved_at = ? WHERE id = ?",
-            (now_str, row["id"])
-        )
+            if row:
+                rubric_id = row["id"]
+                version = row["version"]
+                conn.execute(
+                    """
+                    UPDATE rubrics 
+                    SET status = 'APPROVED', criteria_json = ?, total_max_marks = ?, late_penalty_percent = ?, approved_at = ? 
+                    WHERE id = ?
+                    """,
+                    (criteria_json, total_marks, late_penalty, now_str, rubric_id)
+                )
+            else:
+                rubric_id = str(uuid.uuid4())
+                version = 1
+                conn.execute(
+                    """
+                    INSERT INTO rubrics (id, course_id, assignment_id, version, status, criteria_json, total_max_marks, late_penalty_percent, created_at, approved_at)
+                    VALUES (?, ?, ?, ?, 'APPROVED', ?, ?, ?, ?, ?)
+                    """,
+                    (rubric_id, course_id, assignment_id, version, criteria_json, total_marks, late_penalty, now_str, now_str)
+                )
 
-        criteria_list = [CriterionModel(**c) for c in json.loads(row["criteria_json"])]
+            criteria_list = req.criteria
+            created_at = row["created_at"] if row else now_str
+        else:
+            if not row:
+                raise HTTPException(status_code=400, detail="No rubric exists to approve. Please generate or create one first.")
 
-    AuditService.log_event("RUBRIC_APPROVED", course_id=course_id, assignment_id=assignment_id, details={"rubric_id": row["id"]})
+            conn.execute(
+                "UPDATE rubrics SET status = 'APPROVED', approved_at = ? WHERE id = ?",
+                (now_str, row["id"])
+            )
+            rubric_id = row["id"]
+            version = row["version"]
+            criteria_list = [CriterionModel(**c) for c in json.loads(row["criteria_json"])]
+            total_marks = row["total_max_marks"]
+            late_penalty = row["late_penalty_percent"]
+            created_at = row["created_at"]
+
+    AuditService.log_event("RUBRIC_APPROVED", course_id=course_id, assignment_id=assignment_id, details={"rubric_id": rubric_id})
 
     return RubricResponse(
-        id=row["id"],
-        course_id=row["course_id"],
-        assignment_id=row["assignment_id"],
-        version=row["version"],
+        id=rubric_id,
+        course_id=course_id,
+        assignment_id=assignment_id,
+        version=version,
         status="APPROVED",
         criteria=criteria_list,
-        total_max_marks=row["total_max_marks"],
-        late_penalty_percent=row["late_penalty_percent"],
-        created_at=row["created_at"],
+        total_max_marks=total_marks,
+        late_penalty_percent=late_penalty,
+        created_at=created_at,
         approved_at=now_str
     )
 

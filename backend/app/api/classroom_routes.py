@@ -8,6 +8,7 @@ from backend.app.models.course import CourseResponse, ClassroomListResponse
 from backend.app.services.classroom_service import ClassroomService
 from backend.app.services.excel_service import ExcelService
 from backend.app.services.audit_service import AuditService
+from backend.app.config import DEFAULT_EXCEL_TEMPLATE
 
 router = APIRouter(prefix="/api/classrooms", tags=["Classrooms"])
 
@@ -79,6 +80,58 @@ def get_classroom_workbook_info(course_id: str):
         "filename": wb_path.name,
         "sheets": sheets,
         "columns": columns
+    }
+
+@router.get("/{course_id}/workbook/preview")
+def preview_classroom_workbook(course_id: str):
+    """
+    Parses and returns structured spreadsheet data (sheets, headers, rows)
+    for interactive in-browser inspection of the classroom master workbook.
+    """
+    course = ClassroomService.get_course_by_id(course_id)
+    if not course:
+        raise HTTPException(status_code=404, detail=f"Classroom '{course_id}' not found.")
+
+    wb_path = Path(course.excel_workbook_path) if course.excel_workbook_path else None
+    if not wb_path or not wb_path.exists():
+        wb_path = ExcelService.get_classroom_workbook_path(course.id, course.name, course.section)
+
+    if not wb_path or not wb_path.exists():
+        if DEFAULT_EXCEL_TEMPLATE.exists():
+            wb_path = DEFAULT_EXCEL_TEMPLATE
+        else:
+            raise HTTPException(status_code=404, detail="Consolidated marks workbook not found for this classroom.")
+
+    import openpyxl
+    wb = openpyxl.load_workbook(str(wb_path), data_only=True)
+    sheets_data = []
+
+    for s_name in wb.sheetnames:
+        ws = wb[s_name]
+        raw_rows = []
+        for r in ws.iter_rows(values_only=True):
+            if any(cell is not None and str(cell).strip() != "" for cell in r):
+                raw_rows.append([str(c) if c is not None else "" for c in r])
+        
+        if raw_rows:
+            headers = raw_rows[0]
+            data_rows = raw_rows[1:]
+            sheets_data.append({
+                "sheet_name": s_name,
+                "headers": headers,
+                "rows": data_rows,
+                "total_rows": len(data_rows),
+                "total_cols": len(headers)
+            })
+
+    return {
+        "status": "success",
+        "file_type": "master",
+        "course_id": course_id,
+        "filename": wb_path.name,
+        "file_path": str(wb_path),
+        "sheets": sheets_data,
+        "active_sheet": sheets_data[0]["sheet_name"] if sheets_data else ""
     }
 
 @router.post("/{course_id}/sync")

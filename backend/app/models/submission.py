@@ -13,7 +13,7 @@ class SubmissionAttachment(BaseModel):
 
 class ExtractedContentModel(BaseModel):
     text_content: str = ""
-    code_snippets: List[Dict[str, str]] = Field(default_factory=list)  # [{"language": "c", "code": "..."}]
+    code_snippets: List[Dict[str, Any]] = Field(default_factory=list)  # [{"language": "c", "code": "...", ...}]
     diagram_flowchart_descriptions: List[str] = Field(default_factory=list)
     word_count: int = 0
     extraction_warnings: List[str] = Field(default_factory=list)

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Faculty-Controlled Assignment Evaluation & Grade Management</title>
+  <title>Assignment Evaluator</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="/static/css/style.css">
 </head>
@@ -15,14 +15,11 @@
       <div class="flex items-center justify-between h-16">
         
         <!-- Left: Logo & Title -->
-        <div class="flex items-center gap-4">
-          <div class="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-sm font-bold text-lg">
-            AG
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-xs">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
           </div>
-          <div>
-            <h1 class="text-base font-bold text-slate-800 tracking-tight leading-none">Antigravity Grade Manager</h1>
-            <p class="text-xs text-slate-500 mt-0.5">Local AI Assignment Evaluation System</p>
-          </div>
+          <h1 class="text-base font-bold text-slate-800 tracking-tight">Assignment Evaluator</h1>
         </div>
 
         <!-- Center: Quick Classroom Switcher -->
@@ -33,37 +30,32 @@
           </select>
         </div>
 
-        <!-- Right: Faculty Profile & Local AI Engine Badge -->
-        <div class="flex items-center gap-4">
-          <div class="hidden lg:flex items-center px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 text-xs font-medium border border-slate-200">
-            <span class="w-2 h-2 mr-1.5 bg-blue-500 rounded-full"></span>
-            Apple Silicon M5 Local LLM Active
-          </div>
-
-          <div class="flex items-center gap-3 border-l border-slate-200 pl-4">
-            <div class="text-right">
-              <div id="faculty-name" class="text-xs font-bold text-slate-800">Prof. Bhuvan Teja</div>
-              <div id="faculty-email" class="text-2xs text-slate-400 font-mono">chandragajjela2003@gmail.com</div>
+        <!-- Right: Faculty Profile & Google Status Pill -->
+        <div class="flex items-center gap-3">
+          <button onclick="openGoogleAuthModal()" class="flex items-center gap-2.5 px-3 py-1.5 rounded-full border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 transition shadow-2xs group cursor-pointer">
+            <div class="relative flex items-center justify-center">
+              <div id="faculty-avatar" class="w-7 h-7 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center">
+                BT
+              </div>
+              <span id="google-status-dot" class="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white"></span>
             </div>
-            <button onclick="handleDirectFacultyLogin()" id="btn-header-direct-login" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-2xs font-bold bg-blue-600 text-white hover:bg-blue-700 shadow-xs transition cursor-pointer">
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-              Direct Login
-            </button>
-            <button onclick="openGoogleAuthModal()" id="google-status-badge" class="inline-flex items-center px-2.5 py-1 rounded-full text-2xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300 hover:bg-emerald-200 transition cursor-pointer">
-              Google Account
-            </button>
-          </div>
+            <div class="text-left hidden sm:block">
+              <div id="faculty-name" class="text-xs font-semibold text-slate-800 leading-tight">Faculty</div>
+              <div id="faculty-email" class="text-3xs text-slate-400 font-mono leading-tight">faculty@institution.edu</div>
+            </div>
+            <span id="google-status-badge" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-3xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
+              <span>Connected</span>
+            </span>
+          </button>
         </div>
 
       </div>
 
       <!-- Breadcrumbs Bar -->
-      <div class="py-2.5 border-t border-slate-100 text-xs flex items-center justify-between">
+      <div class="py-2 border-t border-slate-100 text-xs flex items-center justify-between">
         <div id="breadcrumbs-container" class="flex items-center space-x-1">
           <!-- Dynamically filled -->
-        </div>
-        <div class="text-2xs text-slate-400">
-          Human-in-the-Loop Faculty Approval Required Before Publishing
         </div>
       </div>
     </div>
@@ -79,8 +71,8 @@
           <h2 class="text-2xl font-black text-slate-900 tracking-tight">Faculty Multi-Classroom Dashboard</h2>
           <p class="text-sm text-slate-500 mt-1">Manage multiple courses with independent consolidated marks workbooks, assignment-wise sheets, and zero cross-course data mixing.</p>
         </div>
-        <button onclick="loadClassrooms()" class="inline-flex items-center px-3.5 py-2 border border-slate-300 text-xs font-semibold rounded-lg text-slate-700 bg-white hover:bg-slate-50 shadow-xs transition">
-          <svg class="w-3.5 h-3.5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+        <button onclick="syncLiveClassrooms()" class="inline-flex items-center px-3.5 py-2 border border-slate-300 text-xs font-semibold rounded-lg text-slate-700 bg-white hover:bg-slate-50 shadow-xs transition cursor-pointer">
+          <svg class="w-3.5 h-3.5 mr-1.5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
           Sync Classrooms
         </button>
       </div>
@@ -123,9 +115,13 @@
           <p id="selected-course-meta" class="text-xs text-slate-500 mt-1">Section: CSE-A | Enrolled: 66 Students</p>
         </div>
         <div class="flex items-center gap-2">
-          <a id="btn-download-course-wb" href="#" target="_blank" class="inline-flex items-center px-3.5 py-2 border border-emerald-300 text-xs font-semibold rounded-lg text-emerald-800 bg-emerald-50 hover:bg-emerald-100 shadow-xs transition">
-            <svg class="w-3.5 h-3.5 mr-1.5 text-emerald-600" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 2v2h8V6H6zm0 4v2h8v-2H6zm0 4v2h5v-2H6z"/></svg>
-            Download Classroom Workbook (.xlsx)
+          <button id="btn-view-course-wb" onclick="viewClassroomWorkbook(appState.selectedCourse ? appState.selectedCourse.id : null, event)" class="inline-flex items-center px-3.5 py-2 border border-emerald-300 text-xs font-semibold rounded-lg text-emerald-800 bg-emerald-50 hover:bg-emerald-100 shadow-xs transition">
+            <svg class="w-3.5 h-3.5 mr-1.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+            View Workbook
+          </button>
+          <a id="btn-download-course-wb" href="#" target="_blank" class="inline-flex items-center px-3.5 py-2 border border-slate-300 text-xs font-semibold rounded-lg text-slate-700 bg-white hover:bg-slate-50 shadow-xs transition">
+            <svg class="w-3.5 h-3.5 mr-1.5 text-slate-500" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 2v2h8V6H6zm0 4v2h8v-2H6zm0 4v2h5v-2H6z"/></svg>
+            Download (.xlsx)
           </a>
           <button onclick="navigateTo('classrooms')" class="inline-flex items-center px-3.5 py-2 border border-slate-300 text-xs font-semibold rounded-lg text-slate-700 bg-white hover:bg-slate-50 shadow-xs transition">
             &larr; Switch Classroom
@@ -180,10 +176,17 @@
     <section id="view-rubric" class="hidden space-y-6 max-w-4xl mx-auto">
       <div class="flex items-center justify-between pb-4 border-b border-slate-200">
         <div>
+          <button onclick="navigateTo('assignments')" class="mb-2 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-blue-600 transition">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+            <span>Back to Coursework</span>
+          </button>
           <h2 id="rubric-assign-title" class="text-xl font-black text-slate-900">Lab 1 – Algorithms & Flowcharts</h2>
           <p id="rubric-assign-desc" class="text-xs text-slate-500 mt-1">Assignment description...</p>
         </div>
-        <span id="rubric-status-badge" class="px-3 py-1 rounded-full text-xs font-bold"></span>
+        <div class="flex items-center gap-2">
+          <span id="rubric-assign-max" class="px-2.5 py-1 rounded-md text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200"></span>
+          <span id="rubric-status-badge" class="px-3 py-1 rounded-full text-xs font-bold"></span>
+        </div>
       </div>
 
       <!-- Empty prompt for AI generation -->
@@ -224,6 +227,9 @@
             &circlearrowright; Regenerate Criteria with AI
           </button>
           <div class="flex items-center gap-3">
+            <button id="btn-edit-rubric" onclick="editRubric()" class="hidden px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg shadow-xs transition">
+              Edit Marks / Adjust
+            </button>
             <button id="btn-approve-rubric" onclick="approveRubric()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm transition">
               Approve Rubric
             </button>
@@ -273,13 +279,29 @@
       <!-- Header & Top Actions -->
       <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-4 border-b border-slate-200">
         <div>
+          <button onclick="navigateTo('assignments')" class="mb-2 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-blue-600 transition">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+            <span>Back to Coursework</span>
+          </button>
           <h2 id="results-assign-title" class="text-2xl font-black text-slate-900 tracking-tight">Assignment Evaluation Results</h2>
           <p id="results-course-meta" class="text-xs text-slate-500 mt-0.5">Programming in C (CSE-A)</p>
         </div>
         <div class="flex flex-wrap items-center gap-2.5">
+          <button onclick="triggerReEvaluation()" class="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold rounded-lg shadow-xs transition flex items-center gap-1.5" title="Re-evaluate all submissions with latest approved rubric">
+            <svg class="w-3.5 h-3.5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            <span>Evaluate Again</span>
+          </button>
+          <button onclick="loadRubricView()" class="px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-semibold rounded-lg shadow-xs transition flex items-center gap-1.5" title="View or edit marking rubric criteria">
+            <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+            <span>Rubric</span>
+          </button>
           <button onclick="approveAllEvaluations()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs transition flex items-center gap-1.5">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
             Approve All Evaluated
+          </button>
+          <button onclick="openExcelPreviewModal('master')" class="px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-xs font-semibold rounded-lg shadow-xs transition flex items-center gap-1.5" title="View Consolidated Excel Marks Record in browser">
+            <svg class="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+            <span>View Excel</span>
           </button>
           <button onclick="loadExcelView()" class="px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-xs font-bold rounded-lg shadow-xs transition flex items-center gap-1.5">
             <svg class="w-3.5 h-3.5 text-emerald-600" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 2v2h8V6H6zm0 4v2h8v-2H6zm0 4v2h5v-2H6z"/></svg>
@@ -316,6 +338,7 @@
       <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
         <div class="flex flex-wrap items-center gap-1.5 text-xs font-semibold">
           <button id="filter-btn-all" onclick="setResultsFilter('ALL')" class="filter-btn px-3 py-1.5 rounded-lg bg-blue-600 text-white transition">All Students</button>
+          <button id="filter-btn-missing" onclick="setResultsFilter('MISSING')" class="filter-btn px-3 py-1.5 rounded-lg bg-white text-slate-600 hover:bg-slate-100 transition">Missing Submissions</button>
           <button id="filter-btn-uncertain" onclick="setResultsFilter('UNCERTAIN')" class="filter-btn px-3 py-1.5 rounded-lg bg-white text-slate-600 hover:bg-slate-100 transition">Review / Uncertain</button>
           <button id="filter-btn-late" onclick="setResultsFilter('LATE')" class="filter-btn px-3 py-1.5 rounded-lg bg-white text-slate-600 hover:bg-slate-100 transition">Late Submissions</button>
           <button id="filter-btn-wrong_pdf" onclick="setResultsFilter('WRONG_PDF')" class="filter-btn px-3 py-1.5 rounded-lg bg-white text-slate-600 hover:bg-slate-100 transition">Wrong PDF</button>
@@ -382,31 +405,78 @@
           <p class="text-2xs text-slate-400">If the column already exists (e.g. "Lab-1"), student scores will be updated. All other columns remain untouched.</p>
         </div>
 
-        <div class="pt-4 border-t border-slate-100 flex items-center justify-between">
+        <div class="pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
           <span class="text-xs text-slate-500">Versioned backup will be created in <code class="bg-slate-100 px-1 py-0.5 rounded">reports/</code></span>
-          <button onclick="executeExcelExport()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm transition flex items-center gap-2">
-            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 2v2h8V6H6zm0 4v2h8v-2H6zm0 4v2h5v-2H6z"/></svg>
-            Export & Consolidate Excel Workbook
-          </button>
+          <div class="flex items-center gap-2.5">
+            <button onclick="openExcelPreviewModal('master')" class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg shadow-2xs transition flex items-center gap-1.5" title="View Consolidated Workbook in browser">
+              <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+              <span>View Workbook</span>
+            </button>
+            <button onclick="executeExcelExport()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm transition flex items-center gap-2">
+              <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 2v2h8V6H6zm0 4v2h8v-2H6zm0 4v2h5v-2H6z"/></svg>
+              <span>Export & Consolidate Excel Workbook</span>
+            </button>
+          </div>
         </div>
 
-        <!-- Success Box -->
-        <div id="excel-export-success-box" class="hidden p-4 bg-emerald-50 border border-emerald-200 rounded-lg space-y-3">
-          <div class="flex items-center gap-2 text-emerald-800 font-bold text-xs">
-            <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
-            <span>Excel Export Completed Successfully! Updated <span id="excel-updated-count"></span> records.</span>
+        <!-- Success Box with View & Download Options -->
+        <div id="excel-export-success-box" class="hidden p-5 bg-emerald-50 border border-emerald-200 rounded-xl space-y-4">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2 text-emerald-900 font-bold text-xs sm:text-sm">
+              <svg class="w-5 h-5 text-emerald-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+              <span>Excel Export & Consolidation Successful! Updated <span id="excel-updated-count" class="underline"></span> records.</span>
+            </div>
+            <span class="text-3xs font-bold px-2 py-0.5 bg-emerald-200 text-emerald-900 rounded-full uppercase">Synced</span>
           </div>
-          <div class="text-2xs font-mono text-slate-600 space-y-1">
-            <div>Consolidated Master: <span id="excel-output-master-path" class="text-slate-800 font-semibold"></span></div>
-            <div>Detailed Breakdown: <span id="excel-output-detail-path" class="text-slate-800 font-semibold"></span></div>
+
+          <div class="text-2xs font-mono text-slate-600 bg-white/70 p-3 rounded-lg border border-emerald-100 space-y-1">
+            <div>Consolidated Master: <span id="excel-output-master-path" class="text-slate-800 font-semibold break-all"></span></div>
+            <div>Detailed Breakdown: <span id="excel-output-detail-path" class="text-slate-800 font-semibold break-all"></span></div>
           </div>
-          <div class="flex items-center gap-3 pt-2">
-            <button onclick="downloadExcelReport('master')" class="px-3.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold rounded shadow-xs transition">
-              Download Consolidated Workbook (.xlsx)
-            </button>
-            <button onclick="downloadExcelReport('detail')" class="px-3.5 py-1.5 bg-white border border-emerald-300 text-emerald-800 hover:bg-emerald-100 text-xs font-semibold rounded shadow-xs transition">
-              Download Detailed Report (.xlsx)
-            </button>
+
+          <!-- Dual Cards for Viewing & Downloading -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            <!-- Consolidated Master Card -->
+            <div class="p-3 bg-white rounded-lg border border-emerald-200 flex flex-col justify-between gap-2 shadow-2xs">
+              <div>
+                <h4 class="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <svg class="w-4 h-4 text-emerald-600" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 2v2h8V6H6zm0 4v2h8v-2H6zm0 4v2h5v-2H6z"/></svg>
+                  <span>Consolidated Master Workbook</span>
+                </h4>
+                <p class="text-3xs text-slate-500 mt-0.5">Master marks record with all assignments, cumulative scores, and remarks.</p>
+              </div>
+              <div class="flex items-center gap-2 pt-1">
+                <button onclick="openExcelPreviewModal('master')" class="flex-1 py-1.5 px-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-semibold rounded border border-emerald-300 transition flex items-center justify-center gap-1">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                  <span>View Online</span>
+                </button>
+                <button onclick="downloadExcelReport('master')" class="flex-1 py-1.5 px-2.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold rounded shadow-2xs transition flex items-center justify-center gap-1">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                  <span>Download (.xlsx)</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Detailed Breakdown Card -->
+            <div class="p-3 bg-white rounded-lg border border-emerald-200 flex flex-col justify-between gap-2 shadow-2xs">
+              <div>
+                <h4 class="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <svg class="w-4 h-4 text-blue-600" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 2v2h8V6H6zm0 4v2h8v-2H6zm0 4v2h5v-2H6z"/></svg>
+                  <span>Detailed Assignment Report</span>
+                </h4>
+                <p class="text-3xs text-slate-500 mt-0.5">Criterion-by-criterion assessment, evidence snippets, penalty details.</p>
+              </div>
+              <div class="flex items-center gap-2 pt-1">
+                <button onclick="openExcelPreviewModal('detail')" class="flex-1 py-1.5 px-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded border border-blue-300 transition flex items-center justify-center gap-1">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                  <span>View Online</span>
+                </button>
+                <button onclick="downloadExcelReport('detail')" class="flex-1 py-1.5 px-2.5 bg-blue-700 hover:bg-blue-800 text-white text-xs font-semibold rounded shadow-2xs transition flex items-center justify-center gap-1">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                  <span>Download (.xlsx)</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -507,6 +577,22 @@
           </div>
         </div>
 
+        <!-- Submitted Student Work / Attachments -->
+        <div id="modal-work-container" class="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <h4 class="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+              <svg class="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
+              </svg>
+              <span>Submitted Student Work</span>
+            </h4>
+            <span id="modal-work-count-badge" class="text-2xs font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700"></span>
+          </div>
+          <div id="modal-attachments-list" class="space-y-1.5">
+            <!-- Rendered by JS -->
+          </div>
+        </div>
+
         <!-- Criteria Breakdown List -->
         <div>
           <h4 class="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Criterion-Level AI Assessment</h4>
@@ -542,7 +628,128 @@
     </div>
   </div>
 
-  <!-- MODAL: Confirmation for Google Classroom Publishing -->
+  <!-- MODAL: Student Work Files (For multi-file inspection or direct preview) -->
+  <div id="multi-work-modal" class="hidden fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full overflow-hidden animate-in fade-in duration-200">
+      <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+        <div>
+          <h3 id="work-modal-title" class="font-bold text-slate-800 text-base">Submitted Student Files</h3>
+          <span id="work-modal-subtitle" class="text-xs font-mono text-slate-500"></span>
+        </div>
+        <button onclick="closeMultiWorkModal()" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="p-6 space-y-3">
+        <p class="text-xs text-slate-500">Select any file below to open and preview directly in Google Drive:</p>
+        <div id="work-modal-file-list" class="space-y-2 max-h-72 overflow-y-auto">
+          <!-- Populated dynamically by JS -->
+        </div>
+      </div>
+
+      <div class="px-6 py-3 border-t border-slate-100 flex items-center justify-between bg-slate-50">
+        <button id="work-modal-open-all-btn" class="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold rounded border border-indigo-200 transition inline-flex items-center gap-1.5">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+          <span>Open All in New Tabs</span>
+        </button>
+        <button onclick="closeMultiWorkModal()" class="px-4 py-1.5 border border-slate-300 text-xs font-semibold rounded-lg text-slate-700 bg-white hover:bg-slate-100 transition">
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: In-Browser Spreadsheet Viewer for Consolidated Workbook & Detailed Report -->
+  <div id="excel-preview-modal" class="hidden fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-5">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-6xl w-full max-h-[94vh] flex flex-col overflow-hidden animate-in fade-in duration-200">
+      
+      <!-- Modal Header -->
+      <div class="px-5 py-3.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-slate-50">
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 2v2h8V6H6zm0 4v2h8v-2H6zm0 4v2h5v-2H6z"/></svg>
+          </div>
+          <div class="min-w-0">
+            <div class="flex items-center gap-2">
+              <h3 id="excel-preview-modal-title" class="font-bold text-slate-800 text-sm sm:text-base truncate">Consolidated Master Workbook</h3>
+              <span id="excel-preview-type-pill" class="text-3xs font-bold uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 shrink-0">Master</span>
+            </div>
+            <p id="excel-preview-filename" class="text-2xs font-mono text-slate-500 truncate max-w-sm sm:max-w-md">Consolidated_Marks.xlsx</p>
+          </div>
+        </div>
+
+        <!-- Controls: Switcher, Search, Download, Close -->
+        <div class="flex items-center flex-wrap gap-2">
+          <!-- Switcher tabs -->
+          <div class="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-xs font-medium shadow-2xs">
+            <button id="excel-tab-btn-master" onclick="switchExcelPreviewType('master')" class="px-2.5 py-1 rounded-md transition bg-emerald-600 text-white font-semibold">
+              Consolidated Workbook
+            </button>
+            <button id="excel-tab-btn-detail" onclick="switchExcelPreviewType('detail')" class="px-2.5 py-1 rounded-md transition text-slate-600 hover:text-slate-900">
+              Detailed Report
+            </button>
+          </div>
+
+          <!-- Quick Search -->
+          <div class="relative">
+            <input id="excel-preview-search" oninput="filterExcelPreviewRows()" type="text" placeholder="Search rows..." class="pl-7 pr-2.5 py-1 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 focus:ring-2 focus:ring-emerald-500 w-36 sm:w-44">
+            <svg class="w-3.5 h-3.5 text-slate-400 absolute left-2 top-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          </div>
+
+          <!-- Download button -->
+          <button id="excel-preview-download-btn" onclick="downloadCurrentPreviewFile()" class="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-2xs transition flex items-center gap-1.5 shrink-0" title="Download this Excel spreadsheet (.xlsx)">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+            <span>Download (.xlsx)</span>
+          </button>
+
+          <!-- Close -->
+          <button onclick="closeExcelPreviewModal()" class="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Sheet Tabs Bar -->
+      <div id="excel-preview-sheet-tabs-container" class="px-5 py-2 bg-slate-100 border-b border-slate-200 flex items-center gap-1.5 overflow-x-auto text-xs shrink-0">
+        <!-- Rendered by JS -->
+      </div>
+
+      <!-- Table Container -->
+      <div class="flex-1 overflow-auto bg-slate-50 relative p-3 sm:p-5">
+        <div class="bg-white rounded-lg border border-slate-200 shadow-2xs overflow-hidden">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead id="excel-preview-thead" class="sticky top-0 bg-slate-800 text-white font-semibold z-10 shadow-xs">
+              <!-- Rendered by JS -->
+            </thead>
+            <tbody id="excel-preview-tbody" class="divide-y divide-slate-100">
+              <!-- Rendered by JS -->
+            </tbody>
+          </table>
+        </div>
+        <div id="excel-preview-empty" class="hidden py-12 text-center text-xs text-slate-400">
+          No records matching the search query.
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="px-5 py-2.5 border-t border-slate-200 flex items-center justify-between bg-slate-50 text-xs text-slate-500 shrink-0">
+        <div>
+          <span id="excel-preview-row-count" class="font-semibold text-slate-700">0 rows</span> &bull; <span id="excel-preview-col-count">0 columns</span>
+        </div>
+        <div class="flex items-center gap-2.5">
+          <button onclick="downloadCurrentPreviewFile()" class="px-3.5 py-1.5 border border-emerald-300 text-emerald-800 hover:bg-emerald-50 rounded-lg font-semibold transition flex items-center gap-1.5">
+            <svg class="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+            <span>Download (.xlsx)</span>
+          </button>
+          <button onclick="closeExcelPreviewModal()" class="px-4 py-1.5 border border-slate-300 text-slate-700 bg-white hover:bg-slate-100 rounded-lg font-semibold transition">
+            Close
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
   <div id="publish-confirm-modal" class="hidden fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
     <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4">
       <div class="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
@@ -611,54 +818,9 @@
         </button>
       </div>
 
-      <!-- DIRECT 1-CLICK FACULTY SIGN-IN (NO SETUP REQUIRED) -->
-      <div id="direct-login-card" class="p-4 bg-gradient-to-br from-blue-50 to-indigo-50/60 rounded-xl border border-blue-200/80 space-y-3">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <span class="px-2 py-0.5 bg-blue-600 text-white text-2xs font-extrabold rounded uppercase tracking-wider">Fast Track</span>
-            <span class="text-xs font-bold text-slate-900">Direct Faculty Sign-In</span>
-          </div>
-          <span class="text-2xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">Zero Cloud Setup</span>
-        </div>
-        <p class="text-2xs text-slate-600 leading-relaxed">
-          Log in directly as <strong>Prof. Bhuvan Teja</strong> (<code class="text-blue-700 font-semibold">chandragajjela2003@gmail.com</code>) to unlock the full evaluation suite: multi-classroom management, local LLM rubric grading, C & Python sandboxing, and Excel export.
-        </p>
-
-        <button onclick="handleDirectFacultyLogin()" class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-bold rounded-lg shadow-sm transition flex items-center justify-center gap-2">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-          Direct Login as Prof. Bhuvan Teja
-        </button>
-
-        <div class="text-center pt-1">
-          <button onclick="toggleCustomDirectLogin()" class="text-2xs text-slate-500 hover:text-slate-800 underline">
-            Or sign in with custom faculty credentials
-          </button>
-        </div>
-
-        <div id="custom-direct-login-fields" class="hidden pt-2 border-t border-blue-100 space-y-2 text-2xs">
-          <div>
-            <label class="block font-medium text-slate-600 mb-0.5">Faculty Name:</label>
-            <input type="text" id="custom-faculty-name" value="Prof. Bhuvan Teja" class="w-full px-2.5 py-1.5 border border-slate-300 rounded text-xs bg-white">
-          </div>
-          <div>
-            <label class="block font-medium text-slate-600 mb-0.5">Google Email:</label>
-            <input type="email" id="custom-faculty-email" value="chandragajjela2003@gmail.com" class="w-full px-2.5 py-1.5 border border-slate-300 rounded text-xs bg-white">
-          </div>
-          <button onclick="handleCustomDirectLogin()" class="w-full py-1.5 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded transition">
-            Sign In with Custom Profile
-          </button>
-        </div>
-      </div>
-
-      <!-- Divider -->
-      <div id="oauth-divider" class="relative flex items-center justify-center pt-1">
-        <div class="border-t border-slate-200 w-full"></div>
-        <div class="bg-white px-3 text-2xs font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">OR Live Google Cloud API</div>
-      </div>
-
       <!-- Sign In Button (When credentials configured) -->
       <div id="google-login-action" class="space-y-3">
-        <a id="btn-google-sign-in" href="/api/auth/google/login" class="w-full py-2.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-800 text-xs font-bold rounded-lg shadow-xs transition flex items-center justify-center gap-2.5">
+        <a id="btn-google-sign-in" href="/api/auth/google/login" class="w-full py-3 bg-white border border-slate-300 hover:bg-slate-50 text-slate-800 text-xs font-bold rounded-lg shadow-xs transition flex items-center justify-center gap-2.5">
           <svg class="w-4 h-4" viewBox="0 0 24 24">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
             <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -702,17 +864,13 @@
             <div class="font-bold text-blue-900">How to configure credentials.json:</div>
             <div>1. Go to <a href="https://console.cloud.google.com" target="_blank" class="text-blue-600 underline font-semibold">Google Cloud Console</a> & create or select a project.</div>
             <div>2. In <strong>APIs & Services &rarr; Library</strong>, enable <strong>Google Classroom API</strong> and <strong>Google Drive API</strong>.</div>
-            <div>3. In <strong>OAuth consent screen</strong>: Set User Type to External/Internal, and under <strong>Test Users</strong>, add your email: <code class="bg-white px-1 py-0.5 rounded border border-blue-200 font-mono text-slate-700">chandragajjela2003@gmail.com</code>.</div>
+            <div>3. In <strong>OAuth consent screen</strong>: Set User Type to External/Internal, and under <strong>Test Users</strong>, add your email: <code class="bg-white px-1 py-0.5 rounded border border-blue-200 font-mono text-slate-700">bhuvan_k@srmap.edu.in</code>.</div>
             <div>4. In <strong>Credentials &rarr; Create Credentials &rarr; OAuth 2.0 Client ID</strong>, select Application type: <strong>Web application</strong>.</div>
-            <div>5. Under <strong>Authorized JavaScript origins</strong> (optional), enter:
-              <div class="font-mono bg-white px-2 py-1 rounded border border-blue-200 text-blue-800 mt-1 select-all">http://localhost:8000</div>
-              <span class="text-3xs text-slate-500 italic">(Do NOT add a path or trailing slash here)</span>
-            </div>
-            <div>6. Under <strong>Authorized redirect URIs</strong>, enter:
+            <div>5. Under <strong>Authorized redirect URIs</strong>, add:
               <div class="font-mono bg-white px-2 py-1 rounded border border-blue-200 text-blue-800 mt-1 select-all">http://localhost:8000/api/auth/google/callback</div>
               <div class="font-mono bg-white px-2 py-1 rounded border border-blue-200 text-blue-800 mt-1 select-all">http://127.0.0.1:8000/api/auth/google/callback</div>
             </div>
-            <div>7. Click <strong>Create</strong>, copy the Client ID & Secret (or download JSON), and paste/upload above.</div>
+            <div>6. Click <strong>Create</strong>, download the JSON file, and upload it above.</div>
           </div>
         </div>
       </div>

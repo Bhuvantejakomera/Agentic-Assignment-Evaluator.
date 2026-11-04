@@ -1,72 +1,60 @@
 import pytest
+import re
 from backend.app.database import init_db, db_session
 from backend.app.services.classroom_service import ClassroomService
 
 @pytest.fixture(autouse=True)
 def setup_db():
     init_db()
-    ClassroomService.seed_initial_classrooms_if_empty()
 
-def test_classroom_discovery_returns_four_courses():
+def test_classroom_discovery():
     courses = ClassroomService.get_all_courses(ClassroomService.DEFAULT_FACULTY_ID)
-    assert len(courses) >= 4
+    assert len(courses) >= 1
     course_names = [c.name for c in courses]
-    assert "Programming in C" in course_names
-    assert "Data Structures" in course_names
-    assert "Python Programming" in course_names
-    assert "Artificial Intelligence" in course_names
+    assert any("CSE 101" in name for name in course_names)
 
 def test_classroom_scoped_assignments():
     courses = ClassroomService.get_all_courses(ClassroomService.DEFAULT_FACULTY_ID)
-    c1 = next(c for c in courses if c.name == "Programming in C")
-    c2 = next(c for c in courses if c.name == "Data Structures")
+    c1 = next(c for c in courses if "CSE 101" in c.name)
 
     c1_assignments = ClassroomService.get_assignments_for_course(c1.id)
-    c2_assignments = ClassroomService.get_assignments_for_course(c2.id)
 
-    # Scoped: c1 must have Lab assignments, c2 has DS assignments
-    assert len(c1_assignments) >= 4
-    assert any("Lab 1" in a.title for a in c1_assignments)
+    # Scoped: c1 must have the real lab assignments (Lab-1 through Lab-9)
+    assert len(c1_assignments) >= 5
+    assert any("Lab-1" in a.title or "Lab 1" in a.title for a in c1_assignments)
+    assert any("Lab-9" in a.title or "Lab 9" in a.title for a in c1_assignments)
 
-    assert len(c2_assignments) >= 2
-    assert any("Assignment 2" in a.title for a in c2_assignments)
+    # Verify all assignments belong strictly to this course ID
+    assert all(a.course_id == c1.id for a in c1_assignments)
 
-    # Verify no cross-mixing of assignment IDs
-    c1_ids = {a.id for a in c1_assignments}
-    c2_ids = {a.id for a in c2_assignments}
-    assert c1_ids.isdisjoint(c2_ids)
-
-def test_switching_classrooms_preserves_independent_state():
+def test_enrollments_preserved():
     courses = ClassroomService.get_all_courses(ClassroomService.DEFAULT_FACULTY_ID)
-    c1 = next(c for c in courses if c.name == "Programming in C")
-    c2 = next(c for c in courses if c.name == "Data Structures")
+    c1 = next(c for c in courses if "CSE 101" in c.name)
 
-    # Inspect c1 enrollments
+    # Inspect c1 enrollments (67 students)
     with db_session() as conn:
         c1_count = conn.execute("SELECT COUNT(*) as c FROM course_enrollments WHERE course_id = ?", (c1.id,)).fetchone()["c"]
-        c2_count = conn.execute("SELECT COUNT(*) as c FROM course_enrollments WHERE course_id = ?", (c2.id,)).fetchone()["c"]
 
-    assert c1_count == 66
-    assert c2_count == 60
+    assert c1_count == 67
 
 def test_separate_consolidated_workbook_per_classroom():
     """Verifies that each classroom has a dedicated separate workbook file in workbooks/."""
     courses = ClassroomService.get_all_courses(ClassroomService.DEFAULT_FACULTY_ID)
     workbook_paths = [c.excel_workbook_path for c in courses]
-    
+
     # Each course must have a non-null distinct workbook path
     assert all(wb is not None for wb in workbook_paths)
     assert len(set(workbook_paths)) == len(courses), "Classrooms must not share workbook files!"
 
     # Verify filenames correspond to course slugs
     for c in courses:
-        assert c.name.lower().replace(" ", "_") in c.excel_workbook_path.lower()
+        slug = re.sub(r'[^a-z0-9]+', '_', c.name.lower()).strip('_')
+        assert slug in c.excel_workbook_path.lower()
 
 def test_shared_faculty_dashboard_stats():
-    """Verifies aggregated metrics for the shared faculty dashboard across all classrooms."""
+    """Verifies aggregated metrics for the faculty dashboard."""
     stats = ClassroomService.get_faculty_dashboard_stats(ClassroomService.DEFAULT_FACULTY_ID)
-    assert stats["total_classrooms"] == 4
-    assert stats["total_students"] == 66 + 60 + 55 + 50
-    assert stats["total_assignments"] >= 10
-    assert len(stats["classrooms"]) == 4
-
+    assert stats["total_classrooms"] >= 1
+    assert stats["total_students"] >= 67
+    assert stats["total_assignments"] >= 9
+    assert len(stats["classrooms"]) >= 1

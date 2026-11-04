@@ -15,6 +15,10 @@ from backend.app.models.evaluation import (
     EvaluationAdjustRequest,
     BatchApproveRequest
 )
+from googleapiclient.discovery import build
+from backend.app.agents.submission_agent import SubmissionAgent
+from backend.app.agents.evaluator_agent import EvaluationAgent
+from backend.app.services.classroom_service import ClassroomService
 from backend.app.services.document_extractor import DocumentExtractor
 from backend.app.services.google_oauth_service import GoogleOAuthService
 from backend.app.services.evaluation_engine import EvaluationEngine
@@ -85,6 +89,10 @@ def start_evaluation(course_id: str, assignment_id: str):
         if not sub_rows:
             raise HTTPException(status_code=400, detail="No enrolled students or submissions found for this course.")
 
+        # Initialize Drive service for authorized secure downloads if authenticated
+        creds = GoogleOAuthService.get_credentials(ClassroomService.DEFAULT_FACULTY_ID)
+        drive_service = build("drive", "v3", credentials=creds) if creds else None
+
         # Create evaluation run
         run_id = str(uuid.uuid4())
         conn.execute(
@@ -95,76 +103,88 @@ def start_evaluation(course_id: str, assignment_id: str):
             (run_id, course_id, assignment_id, rubric.id, now_str)
         )
 
-        evaluated_list = []
-        for row in sub_rows:
-            sid = row["student_id"]
-            sname = row["student_name"]
-            sub_id = row["sub_id"] or f"sub-missing-{sid}"
-            is_late = bool(row["is_late"]) if row["is_late"] is not None else False
-            state = row["state"] or "MISSING"
+    # Perform evaluation loop outside the database transaction to prevent locking
+    evaluated_list = []
+    for row in sub_rows:
+        sid = row["student_id"]
+        sname = row["student_name"]
+        sub_id = row["sub_id"] or f"sub-missing-{sid}"
+        is_late = bool(row["is_late"]) if row["is_late"] is not None else False
+        state = row["state"] or "MISSING"
+        
+        existing_sub_flags = []
+        if row["submission_flags_json"]:
+            try:
+                existing_sub_flags = json.loads(row["submission_flags_json"])
+            except Exception:
+                pass
 
-            attachments = []
-            if row["attachments_json"]:
-                try:
-                    att_data = json.loads(row["attachments_json"])
-                    attachments = [SubmissionAttachment(**a) for a in att_data]
-                except Exception:
-                    pass
+        attachments = []
+        if row["attachments_json"]:
+            try:
+                att_data = json.loads(row["attachments_json"])
+                attachments = [SubmissionAttachment(**a) for a in att_data]
+            except Exception:
+                pass
 
-            extracted = ExtractedContentModel()
-            if row["extracted_content_json"]:
-                try:
-                    ext_data = json.loads(row["extracted_content_json"])
-                    extracted = ExtractedContentModel(**ext_data)
-                except Exception:
-                    pass
+        if not attachments:
+            state = "MISSING"
+            if "MISSING" not in existing_sub_flags:
+                existing_sub_flags.append("MISSING")
 
-            # If text not extracted yet, download from Google Drive / extract from files
-            if not extracted.text_content and attachments:
-                for att in attachments:
-                    file_path = None
-                    if att.file_path and Path(att.file_path).exists():
-                        file_path = Path(att.file_path)
-                    elif att.file_id:
-                        dest = SUBMISSIONS_DIR / course_id / assignment_id / sid / (att.filename or f"{att.file_id}.pdf")
-                        if not dest.exists():
-                            GoogleOAuthService.download_drive_file(att.file_id, dest)
-                        if dest.exists():
-                            file_path = dest
+        extracted = ExtractedContentModel()
+        if row["extracted_content_json"]:
+            try:
+                ext_data = json.loads(row["extracted_content_json"])
+                extracted = ExtractedContentModel(**ext_data)
+            except Exception:
+                pass
 
-                    if file_path and file_path.exists():
-                        ftype = DocumentExtractor.identify_file_type(file_path)
-                        if ftype == "DOCX":
-                            txt, _ = DocumentExtractor.extract_from_docx(file_path)
-                            extracted.text_content = (extracted.text_content + "\n" + txt).strip()
-                        elif ftype == "PDF":
-                            txt, _ = DocumentExtractor.extract_from_pdf(file_path)
-                            extracted.text_content = (extracted.text_content + "\n" + txt).strip()
-                        elif ftype in ("C", "CPP", "PY"):
-                            txt, code, _ = DocumentExtractor.extract_from_source_code(file_path)
-                            extracted.text_content = (extracted.text_content + "\n" + txt).strip()
-                            if code:
-                                extracted.code_snippets.append({"language": ftype.lower(), "code": code})
-
-            eval_res = EvaluationEngine.evaluate_submission(
-                run_id=run_id,
+        # SubmissionAgent securely downloads and extracts files if not already cached
+        triage_flags = []
+        if not extracted.text_content and attachments:
+            extracted, triage_flags = SubmissionAgent.prepare_and_extract_submission(
                 course_id=course_id,
                 assignment_id=assignment_id,
                 student_id=sid,
-                student_name=sname,
-                submission_id=sub_id,
-                state=state,
-                is_late=is_late,
                 attachments=attachments,
-                extracted_content=extracted,
-                rubric=rubric,
-                assignment_title=assign["title"],
-                assignment_description=assign["description"] or ""
+                drive_service=drive_service
             )
 
-            evaluated_list.append(eval_res)
+        all_flags = list(set(triage_flags + existing_sub_flags))
 
-            # Insert or replace in evaluation_results
+        eval_res = EvaluationEngine.evaluate_submission(
+            run_id=run_id,
+            course_id=course_id,
+            assignment_id=assignment_id,
+            student_id=sid,
+            student_name=sname,
+            submission_id=sub_id,
+            state=state,
+            is_late=is_late,
+            attachments=attachments,
+            extracted_content=extracted,
+            rubric=rubric,
+            assignment_title=assign["title"],
+            assignment_description=assign["description"] or "",
+            existing_flags=all_flags
+        )
+
+        evaluated_list.append(eval_res)
+
+    # Save evaluation results and update statuses in a single atomic transaction
+    completed_time = datetime.now().isoformat()
+    stats = {
+        "total_evaluated": len(evaluated_list),
+        "average_score": round(sum(e.final_score for e in evaluated_list) / len(evaluated_list), 1) if evaluated_list else 0.0,
+        "late_count": sum(1 for e in evaluated_list if "LATE" in e.flags),
+        "wrong_submission_count": sum(1 for e in evaluated_list if "WRONG_PDF" in e.flags),
+        "incomplete_count": sum(1 for e in evaluated_list if "INCOMPLETE" in e.flags),
+        "missing_count": sum(1 for e in evaluated_list if "MISSING" in e.flags)
+    }
+
+    with db_session() as conn:
+        for eval_res in evaluated_list:
             code_exec_json = eval_res.code_execution_results.model_dump_json() if eval_res.code_execution_results else None
             conn.execute(
                 """
@@ -176,7 +196,7 @@ def start_evaluation(course_id: str, assignment_id: str):
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    eval_res.id, run_id, course_id, assignment_id, sid, sub_id,
+                    eval_res.id, run_id, course_id, assignment_id, eval_res.student_id, eval_res.submission_id if hasattr(eval_res, 'submission_id') else f"sub-{eval_res.student_id}",
                     eval_res.raw_score, eval_res.late_penalty, eval_res.final_score,
                     None, 0, eval_res.faculty_remarks,
                     json.dumps([c.model_dump() for c in eval_res.criteria_breakdown]),
@@ -184,17 +204,6 @@ def start_evaluation(course_id: str, assignment_id: str):
                     eval_res.overall_feedback, eval_res.evaluated_at
                 )
             )
-
-        # Update run status
-        completed_time = datetime.now().isoformat()
-        stats = {
-            "total_evaluated": len(evaluated_list),
-            "average_score": round(sum(e.final_score for e in evaluated_list) / len(evaluated_list), 1) if evaluated_list else 0.0,
-            "late_count": sum(1 for e in evaluated_list if "LATE" in e.flags),
-            "wrong_submission_count": sum(1 for e in evaluated_list if "WRONG_PDF" in e.flags),
-            "incomplete_count": sum(1 for e in evaluated_list if "INCOMPLETE" in e.flags),
-            "missing_count": sum(1 for e in evaluated_list if "MISSING" in e.flags)
-        }
 
         conn.execute(
             """
@@ -212,12 +221,47 @@ def start_evaluation(course_id: str, assignment_id: str):
 
     AuditService.log_event("EVALUATION_COMPLETED", course_id=course_id, assignment_id=assignment_id, details=stats)
 
+    # Automatically update the marks for this assignment in the classroom's Excel sheet
+    _sync_assignment_to_excel(course_id, assignment_id)
+
     return {
         "run_id": run_id,
         "status": "COMPLETED",
         "stats": stats,
-        "message": f"Successfully evaluated {len(evaluated_list)} student submissions."
+        "message": f"Successfully evaluated {len(evaluated_list)} student submissions. Marks have been automatically updated in the classroom Excel sheet."
     }
+
+def _sync_assignment_to_excel(course_id: str, assignment_id: str):
+    """Synchronizes the evaluations for an assignment directly into the classroom Excel workbook."""
+    try:
+        from backend.app.services.excel_service import ExcelService
+        course = ClassroomService.get_course_by_id(course_id)
+        if not course:
+            return
+        assignments = ClassroomService.get_assignments_for_course(course_id)
+        assign = next((a for a in assignments if a.id == assignment_id), None)
+        if not assign:
+            return
+        evaluations = get_evaluations(course_id, assignment_id)
+        if not evaluations:
+            return
+
+        wb_path = Path(course.excel_workbook_path) if course.excel_workbook_path else ExcelService.get_classroom_workbook_path(course.id, course.name, course.section)
+        columns = ExcelService.inspect_workbook_columns(wb_path) if wb_path.exists() else []
+        target_col = ExcelService.map_assignment_to_column(assign.title, columns) or ExcelService.get_short_column_header(assign.title)
+
+        run_id = evaluations[0].run_id if evaluations else "run1"
+        ExcelService.update_consolidated_workbook(
+            master_workbook_path=wb_path,
+            course_name=course.name,
+            assignment_title=assign.title,
+            target_column_name=target_col,
+            evaluation_results=evaluations,
+            run_id=run_id
+        )
+    except Exception as exc:
+        import logging
+        logging.error(f"Error auto-syncing Excel workbook for {course_id} / {assignment_id}: {exc}")
 
 @router.get("/evaluations", response_model=List[EvaluationResultResponse])
 def get_evaluations(course_id: str, assignment_id: str):
@@ -225,9 +269,10 @@ def get_evaluations(course_id: str, assignment_id: str):
     with db_session() as conn:
         rows = conn.execute(
             """
-            SELECT e.*, st.name as student_name
+            SELECT e.*, st.name as student_name, s.attachments_json
             FROM evaluation_results e
             JOIN students st ON e.student_id = st.id
+            LEFT JOIN submissions s ON s.course_id = e.course_id AND s.assignment_id = e.assignment_id AND s.student_id = e.student_id
             WHERE e.course_id = ? AND e.assignment_id = ?
             ORDER BY st.name ASC
             """,
@@ -239,6 +284,23 @@ def get_evaluations(course_id: str, assignment_id: str):
             crit_breakdown = [CriterionEvaluationResult(**c) for c in json.loads(r["criteria_breakdown_json"])]
             code_res = CodeTestExecutionResult(**json.loads(r["code_execution_results_json"])) if r["code_execution_results_json"] else None
             flags = json.loads(r["flags_json"]) if r["flags_json"] else []
+
+            att_list = []
+            if "attachments_json" in r.keys() and r["attachments_json"]:
+                try:
+                    raw_atts = json.loads(r["attachments_json"])
+                    for a in raw_atts:
+                        link = a.get("link")
+                        if not link and a.get("file_id"):
+                            link = f"https://drive.google.com/file/d/{a['file_id']}/view?usp=drivesdk"
+                        att_list.append({
+                            "filename": a.get("filename", "submission"),
+                            "file_type": a.get("file_type", "UNKNOWN"),
+                            "file_id": a.get("file_id"),
+                            "link": link
+                        })
+                except Exception:
+                    pass
 
             results.append(EvaluationResultResponse(
                 id=r["id"],
@@ -256,6 +318,7 @@ def get_evaluations(course_id: str, assignment_id: str):
                 criteria_breakdown=crit_breakdown,
                 code_execution_results=code_res,
                 flags=flags,
+                attachments=att_list,
                 overall_feedback=r["overall_feedback"],
                 evaluated_at=r["evaluated_at"],
                 approved_at=r["approved_at"]
@@ -267,9 +330,10 @@ def get_student_evaluation(course_id: str, assignment_id: str, student_id: str):
     with db_session() as conn:
         r = conn.execute(
             """
-            SELECT e.*, st.name as student_name
+            SELECT e.*, st.name as student_name, s.attachments_json
             FROM evaluation_results e
             JOIN students st ON e.student_id = st.id
+            LEFT JOIN submissions s ON s.course_id = e.course_id AND s.assignment_id = e.assignment_id AND s.student_id = e.student_id
             WHERE e.course_id = ? AND e.assignment_id = ? AND e.student_id = ?
             """,
             (course_id, assignment_id, student_id)
@@ -281,6 +345,23 @@ def get_student_evaluation(course_id: str, assignment_id: str, student_id: str):
         crit_breakdown = [CriterionEvaluationResult(**c) for c in json.loads(r["criteria_breakdown_json"])]
         code_res = CodeTestExecutionResult(**json.loads(r["code_execution_results_json"])) if r["code_execution_results_json"] else None
         flags = json.loads(r["flags_json"]) if r["flags_json"] else []
+
+        att_list = []
+        if "attachments_json" in r.keys() and r["attachments_json"]:
+            try:
+                raw_atts = json.loads(r["attachments_json"])
+                for a in raw_atts:
+                    link = a.get("link")
+                    if not link and a.get("file_id"):
+                        link = f"https://drive.google.com/file/d/{a['file_id']}/view?usp=drivesdk"
+                    att_list.append({
+                        "filename": a.get("filename", "submission"),
+                        "file_type": a.get("file_type", "UNKNOWN"),
+                        "file_id": a.get("file_id"),
+                        "link": link
+                    })
+            except Exception:
+                pass
 
         return EvaluationResultResponse(
             id=r["id"],
@@ -298,10 +379,40 @@ def get_student_evaluation(course_id: str, assignment_id: str, student_id: str):
             criteria_breakdown=crit_breakdown,
             code_execution_results=code_res,
             flags=flags,
+            attachments=att_list,
             overall_feedback=r["overall_feedback"],
             evaluated_at=r["evaluated_at"],
             approved_at=r["approved_at"]
         )
+
+@router.get("/submissions/{student_id}/work")
+def open_student_work_redirect(course_id: str, assignment_id: str, student_id: str):
+    """Direct redirect to student's work in Google Drive or returns attachment info."""
+    from fastapi.responses import RedirectResponse
+    with db_session() as conn:
+        r = conn.execute(
+            """
+            SELECT attachments_json FROM submissions
+            WHERE course_id = ? AND assignment_id = ? AND student_id = ?
+            """,
+            (course_id, assignment_id, student_id)
+        ).fetchone()
+
+        if not r or not r["attachments_json"]:
+            raise HTTPException(status_code=404, detail="No submission record found for student.")
+
+        atts = json.loads(r["attachments_json"])
+        if not atts:
+            raise HTTPException(status_code=404, detail="Student has not submitted any attachments.")
+
+        first_att = atts[0]
+        link = first_att.get("link")
+        if not link and first_att.get("file_id"):
+            link = f"https://drive.google.com/file/d/{first_att['file_id']}/view?usp=drivesdk"
+
+        if link:
+            return RedirectResponse(url=link)
+        raise HTTPException(status_code=404, detail="No valid file link found for submission.")
 
 @router.post("/evaluations/{student_id}/adjust", response_model=EvaluationResultResponse)
 def adjust_student_evaluation(course_id: str, assignment_id: str, student_id: str, req: EvaluationAdjustRequest):
@@ -364,6 +475,9 @@ def adjust_student_evaluation(course_id: str, assignment_id: str, student_id: st
         }
     )
 
+    # Sync updated grade to Excel workbook
+    _sync_assignment_to_excel(course_id, assignment_id)
+
     return get_student_evaluation(course_id, assignment_id, student_id)
 
 @router.post("/batch-approve")
@@ -404,6 +518,9 @@ def batch_approve(course_id: str, assignment_id: str, req: BatchApproveRequest):
             conn.execute("UPDATE assignments SET status = 'APPROVED' WHERE id = ?", (assignment_id,))
 
     AuditService.log_event("BATCH_APPROVED", course_id=course_id, assignment_id=assignment_id, details={"approved_count": count})
+
+    # Sync approved status to Excel workbook
+    _sync_assignment_to_excel(course_id, assignment_id)
 
     return {"approved_count": count, "all_approved": unapproved == 0}
 

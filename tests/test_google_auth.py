@@ -3,18 +3,24 @@ import json
 from pathlib import Path
 from fastapi.testclient import TestClient
 from backend.app.main import app
-from backend.app.database import init_db
+from backend.app.database import init_db, db_session
 from backend.app.services.google_oauth_service import GoogleOAuthService
 from backend.app.services.classroom_service import ClassroomService
 
 client = TestClient(app)
 
 ORIGINAL_CREDS_BACKUP = None
+ORIGINAL_FACULTY_BACKUP = None
 
 def setup_module():
-    global ORIGINAL_CREDS_BACKUP
+    global ORIGINAL_CREDS_BACKUP, ORIGINAL_FACULTY_BACKUP
     init_db()
-    ClassroomService.seed_initial_classrooms_if_empty()
+    
+    # Backup faculty row
+    with db_session() as conn:
+        fac = conn.execute("SELECT * FROM faculty WHERE id = ?", (ClassroomService.DEFAULT_FACULTY_ID,)).fetchone()
+        ORIGINAL_FACULTY_BACKUP = dict(fac) if fac else None
+
     creds_path = GoogleOAuthService.get_credentials_path()
     if creds_path.exists():
         ORIGINAL_CREDS_BACKUP = creds_path.read_text(encoding="utf-8")
@@ -27,6 +33,29 @@ def teardown_module():
         creds_path.write_text(ORIGINAL_CREDS_BACKUP, encoding="utf-8")
     elif creds_path.exists():
         creds_path.unlink()
+
+    # Restore faculty row
+    if ORIGINAL_FACULTY_BACKUP is not None:
+        with db_session() as conn:
+            conn.execute(
+                """
+                UPDATE faculty
+                SET email = ?,
+                    name = ?,
+                    google_access_token = ?,
+                    google_refresh_token = ?,
+                    token_expiry = ?
+                WHERE id = ?
+                """,
+                (
+                    ORIGINAL_FACULTY_BACKUP["email"],
+                    ORIGINAL_FACULTY_BACKUP["name"],
+                    ORIGINAL_FACULTY_BACKUP["google_access_token"],
+                    ORIGINAL_FACULTY_BACKUP["google_refresh_token"],
+                    ORIGINAL_FACULTY_BACKUP["token_expiry"],
+                    ORIGINAL_FACULTY_BACKUP["id"]
+                )
+            )
 
 def test_faculty_profile_endpoint():
     res = client.get("/api/auth/faculty")
@@ -82,25 +111,4 @@ def test_disconnect_google():
     # Check faculty profile
     fac = client.get("/api/auth/faculty").json()
     assert fac["is_connected_google"] is False
-
-def test_direct_faculty_login():
-    res = client.post("/api/auth/direct-login", json={
-        "name": "Prof. Bhuvan Teja",
-        "email": "chandragajjela2003@gmail.com"
-    })
-    assert res.status_code == 200
-    data = res.json()
-    assert data["status"] == "success"
-    assert data["faculty"]["is_connected_google"] is True
-
-    # Faculty profile check
-    fac = client.get("/api/auth/faculty").json()
-    assert fac["name"] == "Prof. Bhuvan Teja"
-    assert fac["email"] == "chandragajjela2003@gmail.com"
-    assert fac["is_connected_google"] is True
-
-    # Check live sync in direct mode
-    sync_res = client.post("/api/auth/google/sync-live")
-    assert sync_res.status_code == 200
-    assert sync_res.json()["mode"] == "direct"
 

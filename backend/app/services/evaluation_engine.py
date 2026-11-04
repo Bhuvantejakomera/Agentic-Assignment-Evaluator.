@@ -27,11 +27,12 @@ class EvaluationEngine:
         cls,
         extracted_text: str,
         assignment_title: str,
-        assignment_description: str
+        assignment_description: str,
+        code_snippets: Optional[List[Dict[str, str]]] = None
     ) -> Tuple[bool, str]:
         """Detects whether student uploaded an unrelated document (e.g. wrong PDF)."""
         text_lower = extracted_text.lower()
-        if len(text_lower.strip()) == 0:
+        if len(text_lower.strip()) == 0 and not code_snippets:
             return False, ""
 
         # Check explicit unrelated subject triggers
@@ -39,13 +40,27 @@ class EvaluationEngine:
             if kw in text_lower:
                 return True, f"Uploaded document appears unrelated: contains '{kw}'"
 
+        # Combine text and code for domain analysis
+        combined_content = text_lower
+        if code_snippets:
+            for s in code_snippets:
+                combined_content += " " + s.get("code", "").lower()
+
         # Check domain relevance against assignment context
         context_words = set(re_words for re_words in (assignment_title + " " + assignment_description).lower().split() if len(re_words) > 3)
         if len(context_words) > 3:
-            overlap = [w for w in context_words if w in text_lower]
-            # If student submitted over 100 words but has zero overlap with key assignment words
-            if len(text_lower.split()) > 60 and len(overlap) == 0:
-                # Double check if code snippets exist
+            overlap = [w for w in context_words if w in combined_content]
+            
+            # Programming indicators that confirm this is a valid computing submission
+            programming_indicators = [
+                "stdio.h", "main()", "printf", "scanf", "while", "for", "include",
+                "return 0", "int ", "void ", "palindrome", "gcd", "lcm", "digit",
+                "reverse", "result", "c programming"
+            ]
+            has_prog = any(pi in combined_content for pi in programming_indicators)
+
+            # If student submitted over 60 words but has zero overlap AND no programming indicators
+            if len(combined_content.split()) > 60 and len(overlap) == 0 and not has_prog:
                 return True, "Content has no semantic overlap with assignment topic."
 
         return False, ""
@@ -64,18 +79,24 @@ class EvaluationEngine:
         attachments: List[SubmissionAttachment],
         extracted_content: ExtractedContentModel,
         rubric: RubricResponse,
-        assignment_title: str,
-        assignment_description: str,
-        test_cases: Optional[List[Dict[str, str]]] = None
+        assignment_title: str = "",
+        assignment_description: str = "",
+        test_cases: Optional[List[Dict[str, str]]] = None,
+        existing_flags: Optional[List[str]] = None
     ) -> EvaluationResultResponse:
         now_str = datetime.now().isoformat()
-        flags = []
+        flags = list(existing_flags) if existing_flags else []
         criteria_results: List[CriterionEvaluationResult] = []
         code_exec_result: Optional[CodeTestExecutionResult] = None
         remarks = None
 
         # 1. Check Missing Submission
-        if state == "MISSING" or (not attachments and not extracted_content.text_content.strip()):
+        is_missing = (
+            state in ("MISSING", "NEW", "CREATED", "RECLAIMED_BY_STUDENT")
+            or "MISSING" in flags
+            or (not attachments and not extracted_content.text_content.strip())
+        )
+        if is_missing:
             for crit in rubric.criteria:
                 criteria_results.append(CriterionEvaluationResult(
                     criterion_id=crit.id,
@@ -143,7 +164,8 @@ class EvaluationEngine:
         is_wrong, wrong_reason = cls.detect_wrong_submission(
             extracted_content.text_content,
             assignment_title,
-            assignment_description
+            assignment_description,
+            extracted_content.code_snippets
         )
         if is_wrong:
             flags.append("WRONG_PDF")
@@ -183,9 +205,11 @@ class EvaluationEngine:
             primary_snippet = extracted_content.code_snippets[0]
             lang = primary_snippet.get("language", "c")
             code_str = primary_snippet.get("code", "")
-            if lang in ("c", "cpp"):
+            # Only execute in sandbox if it's not a raw screenshot or if code looks clean
+            is_screenshot = primary_snippet.get("source") in ("screenshot", "screenshot_ocr")
+            if lang in ("c", "cpp") and not is_screenshot:
                 code_exec_result = CodeSandbox.evaluate_c_or_cpp(code_str, lang, test_cases)
-            elif lang in ("py", "python"):
+            elif lang in ("py", "python") and not is_screenshot:
                 code_exec_result = CodeSandbox.evaluate_python(code_str, test_cases)
 
         # 5. Evaluate Criterion by Criterion
@@ -197,17 +221,25 @@ class EvaluationEngine:
                 assignment_context=f"{assignment_title}\n{assignment_description}"
             )
 
-            # If this is code execution criterion and we have actual execution results:
-            if crit.evaluation_type == "code_execution" and code_exec_result:
-                if not code_exec_result.compilation_success:
-                    crit_eval["awarded_marks"] = round(crit.max_marks * 0.2, 1)  # Partial marks for code attempt
-                    crit_eval["status"] = "partial"
-                    crit_eval["explanation"] = f"Compilation failed: {code_exec_result.compilation_error[:120]}"
-                elif code_exec_result.tests_total > 0:
+            # If this is code execution criterion:
+            if crit.evaluation_type == "code_execution":
+                is_screenshot_code = any(s.get("source") in ("screenshot", "screenshot_ocr") for s in extracted_content.code_snippets)
+                if code_exec_result and code_exec_result.compilation_success and code_exec_result.tests_total > 0:
                     pass_ratio = code_exec_result.tests_passed / code_exec_result.tests_total
                     crit_eval["awarded_marks"] = round(crit.max_marks * pass_ratio, 1)
                     crit_eval["status"] = "completed" if pass_ratio == 1.0 else ("partial" if pass_ratio > 0 else "incorrect")
                     crit_eval["explanation"] = f"Passed {code_exec_result.tests_passed}/{code_exec_result.tests_total} automated test cases."
+                elif is_screenshot_code:
+                    crit_eval = LocalLLMEngine.evaluate_screenshot_implementation(
+                        criterion=crit,
+                        code_snippets=extracted_content.code_snippets,
+                        diagram_flowcharts=extracted_content.diagram_flowchart_descriptions,
+                        assignment_context=f"{assignment_title}\n{assignment_description}"
+                    )
+                elif code_exec_result and not code_exec_result.compilation_success:
+                    crit_eval["awarded_marks"] = round(crit.max_marks * 0.2, 1)  # Partial marks for code attempt
+                    crit_eval["status"] = "partial"
+                    crit_eval["explanation"] = f"Compilation failed: {code_exec_result.compilation_error[:120]}"
 
             criteria_results.append(CriterionEvaluationResult(
                 criterion_id=crit.id,

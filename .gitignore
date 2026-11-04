@@ -1,12 +1,52 @@
+# Virtual Environment
 .venv/
+venv/
+env/
+ENV/
+
+# Python Bytecode & Cache
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
 .pytest_cache/
-.DS_Store
+
+# Databases & SQLite Files (Contains live tokens & student records)
+*.db
+*.db-shm
+*.db-wal
 *.db-journal
+*.sqlite
+*.sqlite3
 data/*.db
+data/*.db-shm
+data/*.db-wal
+backend/*.db
+
+# Real Student Submissions & Extracted Content (FERPA / DPDP Privacy)
 data/submissions/
+data/sample_data/
+temp/
+tmp/
+
+# Real Classroom Workbooks & Generated Evaluation Reports
+workbooks/*.xlsx
+reports/
+!workbooks/.gitkeep
+!reports/.gitkeep
+!data/.gitkeep
+
+# Sensitive Google Cloud & OAuth Credentials
 credentials.json
 token.json
+*.pem
+*.key
+.env
+.env.*
+!.env.example
 
-
+# OS & Editor Artifacts
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

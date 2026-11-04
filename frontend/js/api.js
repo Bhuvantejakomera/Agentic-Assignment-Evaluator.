@@ -1,6 +1,20 @@
 // Client API Service
 const API_BASE = "";
 
+async function parseErrorResponse(res, defaultMsg = "Request failed") {
+  try {
+    const err = await res.json();
+    return err.detail || err.message || defaultMsg;
+  } catch (_) {
+    try {
+      const text = await res.text();
+      return text || res.statusText || defaultMsg;
+    } catch (e) {
+      return res.statusText || defaultMsg;
+    }
+  }
+}
+
 const API = {
   // Auth & Faculty
   async getFaculty() {
@@ -17,8 +31,8 @@ const API = {
       body: formData
     });
     if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || "Failed to upload credentials.");
+      const msg = await parseErrorResponse(res, "Failed to upload credentials.");
+      throw new Error(msg);
     }
     return res.json();
   },
@@ -29,33 +43,21 @@ const API = {
       body: JSON.stringify(payload)
     });
     if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || "Failed to save credentials.");
+      const msg = await parseErrorResponse(res, "Failed to save credentials.");
+      throw new Error(msg);
     }
     return res.json();
   },
   async syncLiveGoogle() {
     const res = await fetch(`${API_BASE}/api/auth/google/sync-live`, { method: "POST" });
     if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || "Failed to sync live Google Classroom.");
+      const msg = await parseErrorResponse(res, "Failed to sync live Google Classroom.");
+      throw new Error(msg);
     }
     return res.json();
   },
   async disconnectGoogle() {
     const res = await fetch(`${API_BASE}/api/auth/disconnect`, { method: "POST" });
-    return res.json();
-  },
-  async directLogin(name, email) {
-    const res = await fetch(`${API_BASE}/api/auth/direct-login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, email })
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || "Direct login failed.");
-    }
     return res.json();
   },
 
@@ -82,6 +84,14 @@ const API = {
   },
   downloadClassroomWorkbookUrl(courseId) {
     return `${API_BASE}/api/classrooms/${courseId}/workbook`;
+  },
+  async previewClassroomWorkbook(courseId) {
+    const res = await fetch(`${API_BASE}/api/classrooms/${courseId}/workbook/preview`);
+    if (!res.ok) {
+      const msg = await parseErrorResponse(res, "Failed to load classroom workbook preview.");
+      throw new Error(msg);
+    }
+    return res.json();
   },
 
   // Assignments
@@ -115,10 +125,13 @@ const API = {
     });
     return res.json();
   },
-  async approveRubric(courseId, assignmentId) {
-    const res = await fetch(`${API_BASE}/api/classrooms/${courseId}/assignments/${assignmentId}/rubric/approve`, {
-      method: "POST"
-    });
+  async approveRubric(courseId, assignmentId, rubricData = null) {
+    const opts = { method: "POST" };
+    if (rubricData) {
+      opts.headers = { "Content-Type": "application/json" };
+      opts.body = JSON.stringify(rubricData);
+    }
+    const res = await fetch(`${API_BASE}/api/classrooms/${courseId}/assignments/${assignmentId}/rubric/approve`, opts);
     return res.json();
   },
 
@@ -128,8 +141,8 @@ const API = {
       method: "POST"
     });
     if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || "Evaluation failed to start.");
+      const msg = await parseErrorResponse(res, "Evaluation failed to start.");
+      throw new Error(msg);
     }
     return res.json();
   },
@@ -163,14 +176,22 @@ const API = {
     const res = await fetch(`${API_BASE}/api/classrooms/${courseId}/assignments/${assignmentId}/excel/columns`);
     return res.json();
   },
+  async previewExcel(courseId, assignmentId, fileType = "master") {
+    const res = await fetch(`${API_BASE}/api/classrooms/${courseId}/assignments/${assignmentId}/excel/preview?file_type=${fileType}`);
+    if (!res.ok) {
+      const msg = await parseErrorResponse(res, "Failed to load Excel preview.");
+      throw new Error(msg);
+    }
+    return res.json();
+  },
   async exportExcel(courseId, assignmentId, targetColumn = null) {
     const url = targetColumn 
       ? `${API_BASE}/api/classrooms/${courseId}/assignments/${assignmentId}/excel/export?target_column_name=${encodeURIComponent(targetColumn)}`
       : `${API_BASE}/api/classrooms/${courseId}/assignments/${assignmentId}/excel/export`;
     const res = await fetch(url, { method: "POST" });
     if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || "Failed to export Excel.");
+      const msg = await parseErrorResponse(res, "Failed to export Excel.");
+      throw new Error(msg);
     }
     return res.json();
   },
@@ -188,8 +209,8 @@ const API = {
       })
     });
     if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || "Publishing failed.");
+      const msg = await parseErrorResponse(res, "Publishing failed.");
+      throw new Error(msg);
     }
     return res.json();
   }

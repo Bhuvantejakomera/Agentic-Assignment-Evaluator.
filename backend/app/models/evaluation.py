@@ -36,6 +36,7 @@ class EvaluationResultResponse(BaseModel):
     criteria_breakdown: List[CriterionEvaluationResult]
     code_execution_results: Optional[CodeTestExecutionResult] = None
     flags: List[str] = Field(default_factory=list)
+    attachments: List[Dict[str, Any]] = Field(default_factory=list)
     overall_feedback: str
     evaluated_at: str
     approved_at: Optional[str] = None

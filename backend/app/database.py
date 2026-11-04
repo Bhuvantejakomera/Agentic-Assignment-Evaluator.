@@ -6,10 +6,12 @@ from datetime import datetime
 from backend.app.config import DATABASE_PATH
 
 def get_db_connection() -> sqlite3.Connection:
-    """Returns a SQLite connection with foreign keys enabled and row factory set to dict-like."""
-    conn = sqlite3.connect(str(DATABASE_PATH), timeout=30.0)
+    """Returns a SQLite connection with foreign keys enabled, WAL mode, and resilient busy timeouts."""
+    conn = sqlite3.connect(str(DATABASE_PATH), timeout=60.0)
+    conn.execute("PRAGMA busy_timeout = 60000;")
     conn.execute("PRAGMA foreign_keys = ON;")
     conn.execute("PRAGMA journal_mode = WAL;")
+    conn.execute("PRAGMA synchronous = NORMAL;")
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -85,9 +87,14 @@ def init_db() -> None:
         CREATE TABLE IF NOT EXISTS students (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
-            email TEXT
+            email TEXT,
+            google_user_id TEXT
         );
         """)
+        try:
+            cursor.execute("ALTER TABLE students ADD COLUMN google_user_id TEXT")
+        except Exception:
+            pass
 
         # 5. Course Enrollments table (Enables student in multiple courses)
         cursor.execute("""
@@ -111,7 +118,7 @@ def init_db() -> None:
             status TEXT NOT NULL DEFAULT 'DRAFT',
             criteria_json TEXT NOT NULL,
             total_max_marks REAL NOT NULL,
-            late_penalty_percent REAL DEFAULT 20.0,
+            late_penalty_percent REAL DEFAULT 30.0,
             created_at TEXT NOT NULL,
             approved_at TEXT,
             FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,

@@ -42,43 +42,58 @@ class ExcelService:
         section: str,
         students: List[Dict[str, str]],
         assignment_titles: List[str],
-        seed_from_template: Optional[Path] = None
+        seed_from_template: Optional[Path] = None,
+        force_refresh: bool = False
     ) -> Path:
         """
-        Creates or initializes the dedicated workbook for a classroom if it doesn't exist.
-        Populated only with students enrolled in this specific course.
+        Creates or initializes the dedicated workbook for a classroom.
+        Populated with students enrolled in this specific course.
         """
         wb_path = cls.get_classroom_workbook_path(course_id, course_name, section)
-        if wb_path.exists():
+        if wb_path.exists() and not force_refresh:
             return wb_path
 
-        # If seed template provided (e.g. for Course A from Lab_Marks_Record.xlsx)
+        # Load existing marks from seed template if available
+        existing_marks = {}
         if seed_from_template and seed_from_template.exists():
-            shutil.copy(str(seed_from_template), str(wb_path))
-            # Standardize sheet title to "Consolidated Marks"
             try:
-                wb_seed = openpyxl.load_workbook(str(wb_path))
-                if "Consolidated Marks" not in wb_seed.sheetnames:
-                    first_ws = wb_seed.active
-                    first_ws.title = "Consolidated Marks"
-                    wb_seed.save(str(wb_path))
-            except Exception:
-                pass
-            return wb_path
+                wb_tpl = openpyxl.load_workbook(str(seed_from_template), data_only=True)
+                ws_tpl = wb_tpl["Consolidated Marks"] if "Consolidated Marks" in wb_tpl.sheetnames else (wb_tpl["Lab Marks"] if "Lab Marks" in wb_tpl.sheetnames else wb_tpl.active)
+                tpl_headers = [str(ws_tpl.cell(1, c).value).strip() if ws_tpl.cell(1, c).value else "" for c in range(1, ws_tpl.max_column + 1)]
+                for r in range(2, ws_tpl.max_row + 1):
+                    sid = str(ws_tpl.cell(r, 1).value).strip() if ws_tpl.cell(r, 1).value else None
+                    if sid:
+                        existing_marks[sid] = {}
+                        for c, h in enumerate(tpl_headers, 1):
+                            val = ws_tpl.cell(r, c).value
+                            if val is not None and h:
+                                existing_marks[sid][h.lower()] = val
+            except Exception as e:
+                print(f"Warning loading seed template: {e}")
 
         # Create new dedicated workbook for this classroom
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Consolidated Marks"
 
+        # Natural sort assignment titles (e.g. Lab-1, Lab-2, ..., Lab-9)
+        def get_sort_key(title: str):
+            m = re.search(r'(lab|assignment|proj|quiz)[\s_-]*(\d+)', str(title), re.IGNORECASE)
+            if m:
+                cat_priority = {"lab": 1, "assignment": 2, "proj": 3, "quiz": 4}.get(m.group(1).lower(), 5)
+                return (cat_priority, int(m.group(2)), str(title).lower())
+            return (99, 999, str(title).lower())
+
+        sorted_assignment_titles = sorted(assignment_titles, key=get_sort_key)
+
         # Headers
         headers = ["Student ID", "Name"]
-        for a_title in assignment_titles:
-            # Short clean header, e.g. "Lab 1 – Algorithms" -> "Lab-1" or title
+        for a_title in sorted_assignment_titles:
             short_title = cls.get_short_column_header(a_title)
             if short_title not in headers:
                 headers.append(short_title)
-        headers.append("Remarks")
+        if "Remarks" not in headers:
+            headers.append("Remarks")
 
         for col_idx, h in enumerate(headers, 1):
             cell = ws.cell(1, col_idx, h)
@@ -86,17 +101,25 @@ class ExcelService:
             cell.fill = PatternFill(start_color="1F497D", end_color="1F497D", fill_type="solid")
             cell.alignment = Alignment(horizontal="center", vertical="center")
 
-        # Populate student roster strictly for this course
-        for r_idx, s in enumerate(students, 2):
-            ws.cell(r_idx, 1, s["id"])
+        # Sort students alphabetically by name for a clean, professional roster
+        sorted_students = sorted(students, key=lambda s: s.get("name", "").lower())
+
+        # Populate student roster strictly for this course with clean records
+        for r_idx, s in enumerate(sorted_students, 2):
+            sid = s["id"]
+            ws.cell(r_idx, 1, sid)
             ws.cell(r_idx, 2, s["name"])
 
         # Auto-adjust column widths
-        ws.column_dimensions['A'].width = 18
-        ws.column_dimensions['B'].width = 25
-        for col_letter in ['C', 'D', 'E', 'F', 'G', 'H']:
-            ws.column_dimensions[col_letter].width = 14
-        ws.column_dimensions['I'].width = 30
+        from openpyxl.utils import get_column_letter
+        for col_idx in range(1, len(headers) + 1):
+            col_letter = get_column_letter(col_idx)
+            if col_idx == 1:
+                ws.column_dimensions[col_letter].width = 18
+            elif col_idx == 2:
+                ws.column_dimensions[col_letter].width = 25
+            else:
+                ws.column_dimensions[col_letter].width = 14
 
         wb.save(str(wb_path))
         return wb_path
@@ -232,11 +255,14 @@ class ExcelService:
 
             effective_score = res.faculty_adjusted_score if res.faculty_adjusted_score is not None else res.final_score
             
-            # If wrong PDF or unreadable, leave blank in assignment column
-            if "WRONG_PDF" in res.flags or "UNREADABLE" in res.flags or "MISSING" in res.flags:
-                ws.cell(row_idx, target_col_idx, None)
+            target_cell = ws.cell(row_idx, target_col_idx)
+            # Explicitly set 0.0 for missing or unreadable/wrong submissions
+            if "MISSING" in res.flags or res.faculty_remarks == "Missing":
+                target_cell.value = 0.0
+            elif "WRONG_PDF" in res.flags or "UNREADABLE" in res.flags:
+                target_cell.value = 0.0
             else:
-                ws.cell(row_idx, target_col_idx, round(effective_score, 1))
+                target_cell.value = round(effective_score, 1)
 
             # Update remarks
             curr_remarks = ws.cell(row_idx, remarks_col_idx).value or ""

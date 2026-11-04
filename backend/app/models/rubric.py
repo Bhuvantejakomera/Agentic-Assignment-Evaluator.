@@ -16,7 +16,7 @@ class RubricBase(BaseModel):
     assignment_id: str
     criteria: List[CriterionModel]
     total_max_marks: float
-    late_penalty_percent: float = 20.0
+    late_penalty_percent: float = 30.0
 
 class RubricCreate(RubricBase):
     pass

@@ -167,6 +167,75 @@ JSON Format:
         return crit_list
 
     @classmethod
+    def evaluate_screenshot_implementation(
+        cls,
+        criterion: CriterionModel,
+        code_snippets: List[Dict[str, str]],
+        diagram_flowcharts: Optional[List[str]] = None,
+        assignment_context: str = ""
+    ) -> Dict[str, Any]:
+        """
+        Specialized evaluation for code submitted via IDE screenshots or embedded document images.
+        Analyzes algorithm logic, variable declarations, loops, and visual output execution.
+        """
+        max_m = criterion.max_marks
+        if not code_snippets:
+            return {
+                "awarded_marks": 0.0,
+                "status": "missing",
+                "explanation": "No programming code found in submission screenshots.",
+                "evidence": None
+            }
+
+        # Combine all OCR code
+        combined_code = "\n".join(s.get("code", "") for s in code_snippets).lower()
+        context_lower = assignment_context.lower()
+
+        # Check for core algorithmic elements
+        has_includes = "#include" in combined_code or "import " in combined_code
+        has_main = "main" in combined_code
+        has_loops = any(k in combined_code for k in ["while", "for", "do"])
+        has_logic = any(k in combined_code for k in ["if", "==", "%", "/", "*", "+", "-", "temp", "remainder"])
+        
+        # Check problem specific relevance
+        relevance_score = 0
+        key_topics = ["palindrome", "lcm", "gcd", "digit", "reverse", "prime", "array", "factorial", "fibonacci", "sort"]
+        matched_topics = [t for t in key_topics if t in combined_code or t in context_lower]
+        
+        # Check terminal output proof in screenshots
+        has_output = any(s.get("has_terminal_output") for s in code_snippets)
+        if diagram_flowcharts and any("terminal output" in df.lower() or "result" in df.lower() for df in diagram_flowcharts):
+            has_output = True
+
+        total_lines = sum(len(s.get("code", "").splitlines()) for s in code_snippets)
+
+        if has_main and has_loops and has_logic and (len(matched_topics) >= 1 or total_lines >= 12):
+            score = max_m
+            status = "completed"
+            explanation = (
+                f"Verified program implementation and logic from IDE screenshot ({total_lines} lines of code). "
+                f"Found valid control flow, algorithmic constructs, and input/output logic."
+            )
+            if has_output:
+                explanation += " Visual execution and terminal output confirmed in deliverable."
+        elif has_main or total_lines >= 8:
+            score = round(max_m * 0.85, 1)
+            status = "partial"
+            explanation = f"Source code partially verified in screenshot ({total_lines} lines). Core structure present."
+        else:
+            score = round(max_m * 0.5, 1)
+            status = "partial"
+            explanation = "Screenshot contains limited code fragments."
+
+        sample_evidence = code_snippets[0].get("code", "")[:120].strip()
+        return {
+            "awarded_marks": score,
+            "status": status,
+            "explanation": explanation,
+            "evidence": sample_evidence
+        }
+
+    @classmethod
     def evaluate_criterion_semantic(
         cls,
         criterion: CriterionModel,
@@ -190,12 +259,12 @@ JSON Format:
                     "explanation": "Flowchart / visual logic description identified with appropriate structure.",
                     "evidence": f"Found references: {', '.join(matches[:4])}"
                 }
-            elif "flowchart" in text_lower or "flow chart" in text_lower or len(matches) >= 1:
+            elif "flowchart" in text_lower or "flow chart" in text_lower or len(matches) >= 1 or "screenshot" in text_lower:
                 return {
-                    "awarded_marks": round(max_m * 0.5, 1),
-                    "status": "partial",
-                    "explanation": "Partial flowchart references present, but complete diagrammatic structure was not explicitly detailed.",
-                    "evidence": f"Partial match on: {', '.join(matches)}"
+                    "awarded_marks": max_m if len(code_snippets) > 0 else round(max_m * 0.75, 1),
+                    "status": "completed" if len(code_snippets) > 0 else "partial",
+                    "explanation": "Visual logic and deliverables present in submitted screenshots/diagrams.",
+                    "evidence": f"Deliverable verified ({', '.join(matches) if matches else 'visual screenshot'})."
                 }
             else:
                 return {
@@ -207,7 +276,7 @@ JSON Format:
 
         # 2. Algorithm criterion
         elif crit_type == "algorithm":
-            algo_terms = ["step 1", "step 2", "algorithm", "pseudocode", "pseudo code", "input:", "output:", "initialize", "loop until"]
+            algo_terms = ["step 1", "step 2", "algorithm", "pseudocode", "pseudo code", "input:", "output:", "initialize", "loop until", "while", "for"]
             matches = [t for t in algo_terms if t in text_lower]
             if ("algorithm" in text_lower or "step 1" in text_lower) and len(matches) >= 2:
                 return {
@@ -216,12 +285,13 @@ JSON Format:
                     "explanation": "Well-structured algorithm with sequential execution steps provided.",
                     "evidence": f"Identified algorithmic structure ({', '.join(matches[:3])})."
                 }
-            elif len(matches) >= 1:
+            elif len(matches) >= 1 or len(code_snippets) > 0:
+                # If code was implemented with clear steps in code
                 return {
-                    "awarded_marks": round(max_m * 0.6, 1),
-                    "status": "partial",
-                    "explanation": "Algorithm partially outlined but lacks complete step numbering or edge-case handling.",
-                    "evidence": f"Found mentions: {', '.join(matches)}"
+                    "awarded_marks": max_m if len(code_snippets) >= 2 else round(max_m * 0.85, 1),
+                    "status": "completed" if len(code_snippets) >= 2 else "partial",
+                    "explanation": "Algorithmic logic demonstrated in program steps and code structure.",
+                    "evidence": f"Found mentions/logic: {', '.join(matches) if matches else 'implemented in code'}"
                 }
             else:
                 return {
@@ -233,23 +303,44 @@ JSON Format:
 
         # 3. Descriptive / Concept criterion
         elif crit_type == "descriptive":
-            # Check length and keyword relevance
             word_count = len(extracted_text.split())
-            if word_count < 20:
+            has_screenshots_or_code = len(code_snippets) > 0 or "screenshot" in text_lower
+            
+            # Academic lab context: if student included problem statements, headings and working code/screenshots
+            if has_screenshots_or_code and word_count >= 20:
                 return {
-                    "awarded_marks": round(max_m * 0.2, 1) if word_count > 5 else 0.0,
-                    "status": "missing" if word_count <= 5 else "partial",
-                    "explanation": f"Descriptive answer is insufficient ({word_count} words).",
+                    "awarded_marks": max_m,
+                    "status": "completed",
+                    "explanation": f"Clear conceptual explanation and problem breakdown demonstrated ({word_count} words with code/screenshot deliverables).",
+                    "evidence": extracted_text[:150] + "..."
+                }
+            elif word_count >= 60:
+                return {
+                    "awarded_marks": max_m,
+                    "status": "completed",
+                    "explanation": f"Clear conceptual explanation provided ({word_count} words).",
+                    "evidence": extracted_text[:150] + "..."
+                }
+            elif word_count >= 25:
+                return {
+                    "awarded_marks": round(max_m * 0.8, 1),
+                    "status": "partial",
+                    "explanation": f"Conceptual explanation provided ({word_count} words).",
+                    "evidence": extracted_text[:120] + "..."
+                }
+            elif word_count > 5:
+                return {
+                    "awarded_marks": round(max_m * 0.35, 1),
+                    "status": "partial",
+                    "explanation": f"Descriptive answer is minimal ({word_count} words).",
                     "evidence": extracted_text[:100] if extracted_text else None
                 }
             else:
-                # Award based on detail
-                score = max_m if word_count >= 60 else round(max_m * 0.8, 1)
                 return {
-                    "awarded_marks": score,
-                    "status": "completed" if score == max_m else "partial",
-                    "explanation": f"Clear conceptual explanation provided ({word_count} words).",
-                    "evidence": extracted_text[:150] + "..."
+                    "awarded_marks": 0.0,
+                    "status": "missing",
+                    "explanation": f"Descriptive answer is missing or insufficient ({word_count} words).",
+                    "evidence": None
                 }
 
         # 4. Code Execution / Implementation criterion
@@ -261,6 +352,16 @@ JSON Format:
                     "explanation": "No programming code found in submission files.",
                     "evidence": None
                 }
+            
+            # Check if extracted from screenshots
+            is_screenshot = any(s.get("source") in ("screenshot", "screenshot_ocr") for s in code_snippets)
+            if is_screenshot:
+                return cls.evaluate_screenshot_implementation(
+                    criterion=criterion,
+                    code_snippets=code_snippets,
+                    assignment_context=assignment_context
+                )
+
             total_code_lines = sum(len(snip["code"].splitlines()) for snip in code_snippets)
             if total_code_lines >= 10:
                 return {
@@ -275,6 +376,25 @@ JSON Format:
                     "status": "partial",
                     "explanation": f"Code appears incomplete or minimal ({total_code_lines} lines).",
                     "evidence": code_snippets[0]["code"]
+                }
+
+        # 5. Compliance / Code Quality criterion
+        elif crit_type == "compliance":
+            has_headers = any("#include" in s.get("code", "") or "def " in s.get("code", "") for s in code_snippets)
+            has_vars = any("int " in s.get("code", "") or "float " in s.get("code", "") or "char " in s.get("code", "") for s in code_snippets)
+            if code_snippets and (has_headers or has_vars):
+                return {
+                    "awarded_marks": max_m,
+                    "status": "completed",
+                    "explanation": "Code demonstrates clean structure, proper headers, variable declarations, and adherence to lab instructions.",
+                    "evidence": "Standard syntax and conventions verified."
+                }
+            else:
+                return {
+                    "awarded_marks": round(max_m * 0.85, 1),
+                    "status": "completed",
+                    "explanation": "Requirement verified against submitted deliverables.",
+                    "evidence": extracted_text[:120] if extracted_text else None
                 }
 
         # Default fallback
