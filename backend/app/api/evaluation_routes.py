@@ -59,6 +59,7 @@ def start_evaluation(course_id: str, assignment_id: str):
             else:
                 raise HTTPException(status_code=400, detail="No rubric configured for this assignment. Please prepare a rubric first.")
 
+        guidance = rub_row["custom_guidance"] if "custom_guidance" in rub_row.keys() else None
         rubric = RubricResponse(
             id=rub_row["id"],
             course_id=rub_row["course_id"],
@@ -68,6 +69,7 @@ def start_evaluation(course_id: str, assignment_id: str):
             criteria=[CriterionModel(**c) for c in json.loads(rub_row["criteria_json"])],
             total_max_marks=rub_row["total_max_marks"],
             late_penalty_percent=rub_row["late_penalty_percent"],
+            custom_guidance=guidance,
             created_at=rub_row["created_at"],
             approved_at=rub_row["approved_at"]
         )

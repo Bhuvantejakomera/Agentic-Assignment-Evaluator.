@@ -119,6 +119,7 @@ def init_db() -> None:
             criteria_json TEXT NOT NULL,
             total_max_marks REAL NOT NULL,
             late_penalty_percent REAL DEFAULT 30.0,
+            custom_guidance TEXT,
             created_at TEXT NOT NULL,
             approved_at TEXT,
             FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
@@ -126,6 +127,10 @@ def init_db() -> None:
             UNIQUE(course_id, assignment_id, version)
         );
         """)
+        try:
+            cursor.execute("ALTER TABLE rubrics ADD COLUMN custom_guidance TEXT")
+        except Exception:
+            pass
 
         # 7. Submissions table
         cursor.execute("""

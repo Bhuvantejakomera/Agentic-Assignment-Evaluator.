@@ -27,6 +27,7 @@ def get_rubric(course_id: str, assignment_id: str):
             return None
 
         criteria_list = [CriterionModel(**c) for c in json.loads(row["criteria_json"])]
+        guidance = row["custom_guidance"] if "custom_guidance" in row.keys() else None
         return RubricResponse(
             id=row["id"],
             course_id=row["course_id"],
@@ -36,6 +37,7 @@ def get_rubric(course_id: str, assignment_id: str):
             criteria=criteria_list,
             total_max_marks=row["total_max_marks"],
             late_penalty_percent=row["late_penalty_percent"],
+            custom_guidance=guidance,
             created_at=row["created_at"],
             approved_at=row["approved_at"]
         )
@@ -79,10 +81,10 @@ def save_rubric(course_id: str, assignment_id: str, rubric_data: RubricCreate):
 
         conn.execute(
             """
-            INSERT INTO rubrics (id, course_id, assignment_id, version, status, criteria_json, total_max_marks, late_penalty_percent, created_at)
-            VALUES (?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?)
+            INSERT INTO rubrics (id, course_id, assignment_id, version, status, criteria_json, total_max_marks, late_penalty_percent, custom_guidance, created_at)
+            VALUES (?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?)
             """,
-            (rubric_id, course_id, assignment_id, new_version, criteria_json, rubric_data.total_max_marks, rubric_data.late_penalty_percent, now_str)
+            (rubric_id, course_id, assignment_id, new_version, criteria_json, rubric_data.total_max_marks, rubric_data.late_penalty_percent, rubric_data.custom_guidance, now_str)
         )
 
     AuditService.log_event("RUBRIC_SAVED", course_id=course_id, assignment_id=assignment_id, details={"rubric_id": rubric_id, "version": new_version})
@@ -96,6 +98,7 @@ def save_rubric(course_id: str, assignment_id: str, rubric_data: RubricCreate):
         criteria=rubric_data.criteria,
         total_max_marks=rubric_data.total_max_marks,
         late_penalty_percent=rubric_data.late_penalty_percent,
+        custom_guidance=rubric_data.custom_guidance,
         created_at=now_str
     )
 
@@ -113,6 +116,7 @@ def approve_rubric(course_id: str, assignment_id: str, req: Optional[RubricCreat
             criteria_json = json.dumps([c.model_dump() for c in req.criteria])
             total_marks = req.total_max_marks
             late_penalty = req.late_penalty_percent
+            guidance = req.custom_guidance or (row["custom_guidance"] if row and "custom_guidance" in row.keys() else None)
 
             if row:
                 rubric_id = row["id"]
@@ -120,20 +124,20 @@ def approve_rubric(course_id: str, assignment_id: str, req: Optional[RubricCreat
                 conn.execute(
                     """
                     UPDATE rubrics 
-                    SET status = 'APPROVED', criteria_json = ?, total_max_marks = ?, late_penalty_percent = ?, approved_at = ? 
+                    SET status = 'APPROVED', criteria_json = ?, total_max_marks = ?, late_penalty_percent = ?, custom_guidance = ?, approved_at = ? 
                     WHERE id = ?
                     """,
-                    (criteria_json, total_marks, late_penalty, now_str, rubric_id)
+                    (criteria_json, total_marks, late_penalty, guidance, now_str, rubric_id)
                 )
             else:
                 rubric_id = str(uuid.uuid4())
                 version = 1
                 conn.execute(
                     """
-                    INSERT INTO rubrics (id, course_id, assignment_id, version, status, criteria_json, total_max_marks, late_penalty_percent, created_at, approved_at)
-                    VALUES (?, ?, ?, ?, 'APPROVED', ?, ?, ?, ?, ?)
+                    INSERT INTO rubrics (id, course_id, assignment_id, version, status, criteria_json, total_max_marks, late_penalty_percent, custom_guidance, created_at, approved_at)
+                    VALUES (?, ?, ?, ?, 'APPROVED', ?, ?, ?, ?, ?, ?)
                     """,
-                    (rubric_id, course_id, assignment_id, version, criteria_json, total_marks, late_penalty, now_str, now_str)
+                    (rubric_id, course_id, assignment_id, version, criteria_json, total_marks, late_penalty, guidance, now_str, now_str)
                 )
 
             criteria_list = req.criteria
@@ -151,6 +155,7 @@ def approve_rubric(course_id: str, assignment_id: str, req: Optional[RubricCreat
             criteria_list = [CriterionModel(**c) for c in json.loads(row["criteria_json"])]
             total_marks = row["total_max_marks"]
             late_penalty = row["late_penalty_percent"]
+            guidance = row["custom_guidance"] if "custom_guidance" in row.keys() else None
             created_at = row["created_at"]
 
     AuditService.log_event("RUBRIC_APPROVED", course_id=course_id, assignment_id=assignment_id, details={"rubric_id": rubric_id})
@@ -164,6 +169,7 @@ def approve_rubric(course_id: str, assignment_id: str, req: Optional[RubricCreat
         criteria=criteria_list,
         total_max_marks=total_marks,
         late_penalty_percent=late_penalty,
+        custom_guidance=guidance,
         created_at=created_at,
         approved_at=now_str
     )

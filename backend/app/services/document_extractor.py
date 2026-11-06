@@ -36,6 +36,16 @@ class DocumentExtractor:
         ext = file_path.suffix.lower()
         return cls.SUPPORTED_EXTENSIONS.get(ext, "UNKNOWN")
 
+    @staticmethod
+    def normalize_vertical_text(text: str) -> str:
+        """Fixes PDFs where characters or words are extracted with a newline between every single character."""
+        if not text:
+            return ""
+        lines = text.splitlines()
+        if len(lines) > 20 and (sum(len(l.strip()) for l in lines) / len(lines)) < 2.5:
+            return re.sub(r"(?<=.)\n(?=.)", "", text)
+        return text
+
     @classmethod
     def extract_from_pdf(cls, file_path: Path) -> Tuple[str, List[str]]:
         text_content = []
@@ -49,7 +59,8 @@ class DocumentExtractor:
             for idx, page in enumerate(reader.pages):
                 extracted = page.extract_text()
                 if extracted and extracted.strip():
-                    text_content.append(extracted.strip())
+                    norm_extracted = cls.normalize_vertical_text(extracted.strip())
+                    text_content.append(norm_extracted)
                 
                 # Check for embedded screenshots / images on page
                 try:
@@ -188,6 +199,10 @@ class DocumentExtractor:
 
         for line in lines:
             stripped = line.strip()
+
+            # Skip standalone gutter line numbers (e.g. 1, 2, 3... from editor margins in screenshots/docs)
+            if re.match(r'^\s*\d{1,4}[:\.]?\s*$', line):
+                continue
 
             # Boundary delimiter: next question, document break, or separate section
             if in_code and (re.match(r'^[b-z]\)\s+', stripped, re.IGNORECASE) or 
@@ -343,6 +358,10 @@ class DocumentExtractor:
             # Extract any embedded code from PDFs or Word documents
             if file_type in ("PDF", "DOCX", "HTML", "TXT"):
                 embedded = cls.extract_code_blocks_from_text(text)
+                if file_type in ("PDF", "DOCX"):
+                    for s in embedded:
+                        if "Screenshot" in text or "Code Image" in text:
+                            s["source"] = "screenshot_ocr"
                 code_snippets.extend(embedded)
 
             # Check for flowchart / diagram keywords in text

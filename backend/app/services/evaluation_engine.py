@@ -1,4 +1,5 @@
 import json
+import re
 import uuid
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
@@ -28,10 +29,14 @@ class EvaluationEngine:
         extracted_text: str,
         assignment_title: str,
         assignment_description: str,
-        code_snippets: Optional[List[Dict[str, str]]] = None
+        code_snippets: Optional[List[Dict[str, str]]] = None,
+        custom_guidance: Optional[str] = None,
+        criteria: Optional[List[CriterionModel]] = None,
+        diagram_flowcharts: Optional[List[str]] = None
     ) -> Tuple[bool, str]:
-        """Detects whether student uploaded an unrelated document (e.g. wrong PDF)."""
-        text_lower = extracted_text.lower()
+        """Detects whether student uploaded an unrelated document (e.g. wrong PDF or different lab)."""
+        import re
+        text_lower = (extracted_text or "").lower()
         if len(text_lower.strip()) == 0 and not code_snippets:
             return False, ""
 
@@ -40,22 +45,54 @@ class EvaluationEngine:
             if kw in text_lower:
                 return True, f"Uploaded document appears unrelated: contains '{kw}'"
 
-        # Combine text and code for domain analysis
+        # Combine text, code snippets, and diagram/terminal descriptions
         combined_content = text_lower
         if code_snippets:
             for s in code_snippets:
                 combined_content += " " + s.get("code", "").lower()
+        if diagram_flowcharts:
+            for df in diagram_flowcharts:
+                combined_content += " " + df.lower()
 
-        # Check domain relevance against assignment context
-        context_words = set(re_words for re_words in (assignment_title + " " + assignment_description).lower().split() if len(re_words) > 3)
+        # Check against technical criteria if provided
+        if criteria:
+            from backend.app.services.llm_engine import LocalLLMEngine
+            tech_criteria = [
+                c for c in criteria
+                if c.evaluation_type in ("code_execution", "algorithm", "diagram_flowchart")
+                and not any(k in c.name.lower() for k in ("quality", "compliance", "readability", "penalty", "heading"))
+                and c.max_marks > 0
+            ]
+            if len(tech_criteria) >= 2:
+                matched_tech_count = 0
+                for tc in tech_criteria:
+                    task_sigs = LocalLLMEngine.extract_task_signature_keywords(f"{tc.name} {tc.description}")
+                    if not task_sigs:
+                        task_sigs = LocalLLMEngine.extract_domain_keywords(f"{tc.name} {tc.description}")
+                    if not task_sigs:
+                        continue
+                    if any(r in task_sigs for r in ("reverse", "reversal")):
+                        if any(r in combined_content for r in ("reverse", "reversal", "rev")):
+                            matched_tech_count += 1
+                    elif any(sig in combined_content for sig in task_sigs):
+                        matched_tech_count += 1
+
+                content_words = len(combined_content.split())
+                if matched_tech_count == 0 and (content_words >= 25 or len(code_snippets or []) >= 1):
+                    return True, "Submitted deliverable contains unrelated tasks/problems (found 0 matches for assigned lab criteria)."
+
+        # Check domain relevance against assignment context + faculty expectations
+        combined_prompt = f"{assignment_title} {assignment_description} {custom_guidance or ''}".lower()
+        context_words = set(re_words for re_words in re.findall(r'[a-zA-Z]{4,}', combined_prompt))
         if len(context_words) > 3:
             overlap = [w for w in context_words if w in combined_content]
             
-            # Programming indicators that confirm this is a valid computing submission
+            # Programming & domain indicators confirming this is a valid computing submission
             programming_indicators = [
                 "stdio.h", "main()", "printf", "scanf", "while", "for", "include",
                 "return 0", "int ", "void ", "palindrome", "gcd", "lcm", "digit",
-                "reverse", "result", "c programming"
+                "reverse", "result", "c programming", "arithmetic", "binary", "decimal",
+                "operator", "terminal", "screenshot", "output", "calculator", "bits"
             ]
             has_prog = any(pi in combined_content for pi in programming_indicators)
 
@@ -64,6 +101,42 @@ class EvaluationEngine:
                 return True, "Content has no semantic overlap with assignment topic."
 
         return False, ""
+
+    @staticmethod
+    def _extract_missing_output_penalty(guidance: Optional[str]) -> Optional[float]:
+        """Infer a numeric per-task penalty for missing output from faculty guidance.
+
+        Faculty may phrase it many ways:
+          - "no output do a minus of 5 per task"
+          - "if there is no output subtract 5 points"
+          - "missing output penalty 5"
+          - "output not present – deduct 5"
+          - "minus 5 if output is missing"
+        Returns a negative float (e.g. -5.0) if detected, otherwise None.
+        """
+        if not guidance:
+            return None
+        text = guidance.lower()
+
+        # Quick gate: must mention "output" somewhere
+        if "output" not in text:
+            return None
+
+        penalty_verbs = r"(?:minus|deduct|subtract|lose|penalty|reduce|take\s+away|cut)"
+
+        # Pattern A: "output" … penalty-verb … number
+        pat_a = r"output.*?" + penalty_verbs + r".*?(\d+(?:\.\d+)?)"
+        m = re.search(pat_a, text, re.DOTALL)
+        if m:
+            return -float(m.group(1))
+
+        # Pattern B: penalty-verb … number … "output"
+        pat_b = penalty_verbs + r".*?(\d+(?:\.\d+)?).*?output"
+        m = re.search(pat_b, text, re.DOTALL)
+        if m:
+            return -float(m.group(1))
+
+        return None
 
     @classmethod
     def evaluate_submission(
@@ -160,12 +233,15 @@ class EvaluationEngine:
                 evaluated_at=now_str
             )
 
-        # 3. Check Wrong Submission (e.g. Uploaded Wrong PDF)
+        # 3. Check Wrong Submission (e.g. Uploaded Wrong PDF or Unrelated Lab)
         is_wrong, wrong_reason = cls.detect_wrong_submission(
             extracted_content.text_content,
             assignment_title,
             assignment_description,
-            extracted_content.code_snippets
+            extracted_content.code_snippets,
+            custom_guidance=rubric.custom_guidance,
+            criteria=rubric.criteria,
+            diagram_flowcharts=extracted_content.diagram_flowchart_descriptions
         )
         if is_wrong:
             flags.append("WRONG_PDF")
@@ -200,16 +276,32 @@ class EvaluationEngine:
                 evaluated_at=now_str
             )
 
-        # 4. Code Execution if applicable
+        # 4. Detect optional missing-output penalty from faculty guidance
+        text_lower = (extracted_content.text_content or "").lower()
+        output_txt_indicators = [
+            "output:", "output :-", "terminal", "debug console", "problems output",
+            "gcc ", "./a.exe", "./a.out", ".exe", "--- results", "ps c:\\", "ps d:\\"
+        ]
+        has_output_screenshots = (
+            bool(extracted_content.diagram_flowchart_descriptions) or
+            any(s.get("has_terminal_output") for s in extracted_content.code_snippets if isinstance(s, dict)) or
+            any(ind in text_lower for ind in output_txt_indicators)
+        )
+        missing_output_penalty = cls._extract_missing_output_penalty(rubric.custom_guidance)
+
+        has_direct_code_file = any(att.file_type in ("C", "CPP", "PY") for att in attachments)
+        has_screenshot_deliverable = any(att.file_type in ("PDF", "DOCX", "IMAGE") for att in attachments) or \
+                                     any(s.get("source") in ("screenshot", "screenshot_ocr") for s in extracted_content.code_snippets)
+
         if extracted_content.code_snippets:
             primary_snippet = extracted_content.code_snippets[0]
             lang = primary_snippet.get("language", "c")
             code_str = primary_snippet.get("code", "")
-            # Only execute in sandbox if it's not a raw screenshot or if code looks clean
-            is_screenshot = primary_snippet.get("source") in ("screenshot", "screenshot_ocr")
-            if lang in ("c", "cpp") and not is_screenshot:
+            # Only execute in sandbox if student uploaded a direct code file and not a screenshot deliverable
+            is_screenshot = primary_snippet.get("source") in ("screenshot", "screenshot_ocr") or has_screenshot_deliverable
+            if lang in ("c", "cpp") and has_direct_code_file and not is_screenshot:
                 code_exec_result = CodeSandbox.evaluate_c_or_cpp(code_str, lang, test_cases)
-            elif lang in ("py", "python") and not is_screenshot:
+            elif lang in ("py", "python") and has_direct_code_file and not is_screenshot:
                 code_exec_result = CodeSandbox.evaluate_python(code_str, test_cases)
 
         # 5. Evaluate Criterion by Criterion
@@ -218,13 +310,15 @@ class EvaluationEngine:
                 criterion=crit,
                 extracted_text=extracted_content.text_content,
                 code_snippets=extracted_content.code_snippets,
-                assignment_context=f"{assignment_title}\n{assignment_description}"
+                assignment_context=f"{assignment_title}\n{assignment_description}",
+                custom_guidance=rubric.custom_guidance,
+                diagram_flowcharts=extracted_content.diagram_flowchart_descriptions
             )
 
-            # If this is code execution criterion:
-            if crit.evaluation_type == "code_execution":
-                is_screenshot_code = any(s.get("source") in ("screenshot", "screenshot_ocr") for s in extracted_content.code_snippets)
-                if code_exec_result and code_exec_result.compilation_success and code_exec_result.tests_total > 0:
+            # If this is code execution or technical algorithmic criterion:
+            if crit.evaluation_type in ("code_execution", "algorithm"):
+                is_screenshot_code = any(s.get("source") in ("screenshot", "screenshot_ocr") for s in extracted_content.code_snippets) or has_screenshot_deliverable
+                if code_exec_result and code_exec_result.compilation_success and code_exec_result.tests_total > 0 and crit.evaluation_type == "code_execution":
                     pass_ratio = code_exec_result.tests_passed / code_exec_result.tests_total
                     crit_eval["awarded_marks"] = round(crit.max_marks * pass_ratio, 1)
                     crit_eval["status"] = "completed" if pass_ratio == 1.0 else ("partial" if pass_ratio > 0 else "incorrect")
@@ -234,9 +328,23 @@ class EvaluationEngine:
                         criterion=crit,
                         code_snippets=extracted_content.code_snippets,
                         diagram_flowcharts=extracted_content.diagram_flowchart_descriptions,
-                        assignment_context=f"{assignment_title}\n{assignment_description}"
+                        assignment_context=f"{assignment_title}\n{assignment_description}",
+                        custom_guidance=rubric.custom_guidance,
+                        extracted_text=extracted_content.text_content
                     )
-                elif code_exec_result and not code_exec_result.compilation_success:
+                    # Apply missing output penalty if faculty specified it and no output was found
+                    task_has_output = crit_eval.get("has_output", False) or has_output_screenshots
+                    if missing_output_penalty is not None and not task_has_output:
+                        new_score = max(0.0, crit_eval["awarded_marks"] + missing_output_penalty)
+                        crit_eval["awarded_marks"] = round(new_score, 1)
+                        if crit_eval["awarded_marks"] == crit.max_marks:
+                            crit_eval["status"] = "completed"
+                        elif crit_eval["awarded_marks"] > 0:
+                            crit_eval["status"] = "partial"
+                        else:
+                            crit_eval["status"] = "incorrect"
+                        crit_eval["explanation"] += f" Penalty applied: missing output screenshot ({missing_output_penalty} pts)."
+                elif code_exec_result and not code_exec_result.compilation_success and crit.evaluation_type == "code_execution":
                     crit_eval["awarded_marks"] = round(crit.max_marks * 0.2, 1)  # Partial marks for code attempt
                     crit_eval["status"] = "partial"
                     crit_eval["explanation"] = f"Compilation failed: {code_exec_result.compilation_error[:120]}"

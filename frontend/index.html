@@ -189,6 +189,43 @@
         </div>
       </div>
 
+      <!-- Faculty Deliverables & Submission Expectations Card -->
+      <div class="bg-white p-5 rounded-xl border border-blue-200/80 shadow-xs space-y-3">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <div class="w-6 h-6 rounded-md bg-blue-600 text-white flex items-center justify-center font-bold text-xs">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+            </div>
+            <div>
+              <h3 class="font-bold text-slate-800 text-sm">Faculty Deliverables & Submission Expectations</h3>
+              <p class="text-xs text-slate-400">Specify what deliverables you expect from students (e.g., screenshots, arithmetic operations, binary conversion, code files). The local evaluation will be tailored strictly to these instructions.</p>
+            </div>
+          </div>
+          <span class="text-2xs font-semibold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">Ground Truth</span>
+        </div>
+
+        <div>
+          <textarea id="rubric-guidance-input" rows="3" placeholder="e.g. The student is expected to submit a PDF or word file or code files that shows that he/she has executed the arithmetic operation and converting the decimal to binary with IDE and terminal screenshots." class="w-full text-xs p-3 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-sans text-slate-800 leading-relaxed"></textarea>
+        </div>
+
+        <!-- Quick Template Chips -->
+        <div class="flex flex-wrap items-center gap-1.5 pt-1">
+          <span class="text-3xs font-semibold text-slate-400 uppercase tracking-wider">Quick Suggestions:</span>
+          <button type="button" onclick="setGuidanceTemplate('arithmetic_binary')" class="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-3xs font-medium text-slate-700 transition cursor-pointer">
+            + Arithmetic & Decimal to Binary
+          </button>
+          <button type="button" onclick="setGuidanceTemplate('screenshots_pdf')" class="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-3xs font-medium text-slate-700 transition cursor-pointer">
+            + IDE & Terminal Screenshots in PDF/DOCX
+          </button>
+          <button type="button" onclick="setGuidanceTemplate('flowchart_code_output')" class="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-3xs font-medium text-slate-700 transition cursor-pointer">
+            + Algorithm + Flowchart + Code + Output
+          </button>
+          <button type="button" onclick="setGuidanceTemplate('direct_code')" class="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-3xs font-medium text-slate-700 transition cursor-pointer">
+            + Direct Code Files (.c / .py)
+          </button>
+        </div>
+      </div>
+
       <!-- Empty prompt for AI generation -->
       <div id="rubric-empty-prompt" class="p-8 text-center bg-white rounded-xl border border-dashed border-slate-300 space-y-4">
         <div class="w-12 h-12 mx-auto rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xl">
