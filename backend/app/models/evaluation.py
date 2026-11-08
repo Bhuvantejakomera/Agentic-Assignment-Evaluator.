@@ -31,6 +31,7 @@ class EvaluationResultResponse(BaseModel):
     late_penalty: float
     duplicate_penalty: float = 0.0
     duplicate_of: Optional[str] = None
+    duplicate_cluster_id: Optional[int] = None
     final_score: float
     faculty_adjusted_score: Optional[float] = None
     faculty_approved: bool = False

@@ -198,12 +198,17 @@ def start_evaluation(course_id: str, assignment_id: str):
 
     with db_session() as conn:
         for eval_res in evaluated_list:
-            dup_pen = 20.0 if "DUPLICATE" in eval_res.flags else 0.0
-            dup_of = None
-            if "Duplicate submission: Copied from " in (eval_res.faculty_remarks or ""):
+            dup_pen = getattr(eval_res, "duplicate_penalty", 20.0 if "DUPLICATE" in eval_res.flags else 0.0)
+            dup_of = getattr(eval_res, "duplicate_of", None)
+            dup_cluster_id = getattr(eval_res, "duplicate_cluster_id", None)
+            if not dup_of and "Duplicate submission" in (eval_res.faculty_remarks or ""):
                 m = re.search(r"Copied from (.*?)(?:\s*\(|$)", eval_res.faculty_remarks)
                 if m:
                     dup_of = m.group(1).strip()
+            if not dup_cluster_id and eval_res.faculty_remarks:
+                m = re.search(r"duplicate cluster #?(\d+)", eval_res.faculty_remarks, re.IGNORECASE)
+                if m:
+                    dup_cluster_id = int(m.group(1))
 
             code_exec_json = eval_res.code_execution_results.model_dump_json() if eval_res.code_execution_results else None
             conn.execute(
@@ -213,8 +218,8 @@ def start_evaluation(course_id: str, assignment_id: str):
                     raw_score, late_penalty, final_score, faculty_adjusted_score,
                     faculty_approved, faculty_remarks, criteria_breakdown_json,
                     code_execution_results_json, flags_json, overall_feedback, evaluated_at,
-                    duplicate_penalty, duplicate_of
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    duplicate_penalty, duplicate_of, duplicate_cluster_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     eval_res.id, run_id, course_id, assignment_id, eval_res.student_id, eval_res.submission_id if hasattr(eval_res, 'submission_id') else f"sub-{eval_res.student_id}",
@@ -223,7 +228,7 @@ def start_evaluation(course_id: str, assignment_id: str):
                     json.dumps([c.model_dump() for c in eval_res.criteria_breakdown]),
                     code_exec_json, json.dumps(eval_res.flags),
                     eval_res.overall_feedback, eval_res.evaluated_at,
-                    dup_pen, dup_of
+                    dup_pen, dup_of, dup_cluster_id
                 )
             )
 
@@ -326,10 +331,15 @@ def get_evaluations(course_id: str, assignment_id: str):
 
             dup_pen = r["duplicate_penalty"] if "duplicate_penalty" in r.keys() and r["duplicate_penalty"] is not None else (20.0 if "DUPLICATE" in flags else 0.0)
             dup_of = r["duplicate_of"] if "duplicate_of" in r.keys() else None
+            dup_cluster_id = r["duplicate_cluster_id"] if "duplicate_cluster_id" in r.keys() else None
             if not dup_of and "Duplicate submission: Copied from " in (r["faculty_remarks"] or ""):
                 m = re.search(r"Copied from (.*?)(?:\s*\(|$)", r["faculty_remarks"] or "")
                 if m:
                     dup_of = m.group(1).strip()
+            if not dup_cluster_id and r["faculty_remarks"]:
+                m = re.search(r"duplicate cluster #?(\d+)", r["faculty_remarks"] or "", re.IGNORECASE)
+                if m:
+                    dup_cluster_id = int(m.group(1))
 
             results.append(EvaluationResultResponse(
                 id=r["id"],
@@ -342,6 +352,7 @@ def get_evaluations(course_id: str, assignment_id: str):
                 late_penalty=r["late_penalty"],
                 duplicate_penalty=dup_pen,
                 duplicate_of=dup_of,
+                duplicate_cluster_id=dup_cluster_id,
                 final_score=r["final_score"],
                 faculty_adjusted_score=r["faculty_adjusted_score"],
                 faculty_approved=bool(r["faculty_approved"]),
@@ -428,20 +439,25 @@ def detect_duplicates_endpoint(course_id: str, assignment_id: str):
 
         # Update database records
         for eval_res in evaluated_list:
-            dup_pen = 20.0 if "DUPLICATE" in eval_res.flags else 0.0
-            dup_of = None
-            if "Duplicate submission: Copied from " in (eval_res.faculty_remarks or ""):
+            dup_pen = getattr(eval_res, "duplicate_penalty", 20.0 if "DUPLICATE" in eval_res.flags else 0.0)
+            dup_of = getattr(eval_res, "duplicate_of", None)
+            dup_cluster_id = getattr(eval_res, "duplicate_cluster_id", None)
+            if not dup_of and "Duplicate submission" in (eval_res.faculty_remarks or ""):
                 m = re.search(r"Copied from (.*?)(?:\s*\(|$)", eval_res.faculty_remarks)
                 if m:
                     dup_of = m.group(1).strip()
+            if not dup_cluster_id and eval_res.faculty_remarks:
+                m = re.search(r"duplicate cluster #?(\d+)", eval_res.faculty_remarks, re.IGNORECASE)
+                if m:
+                    dup_cluster_id = int(m.group(1))
 
             conn.execute(
                 """
                 UPDATE evaluation_results
-                SET final_score = ?, flags_json = ?, faculty_remarks = ?, duplicate_penalty = ?, duplicate_of = ?
+                SET final_score = ?, flags_json = ?, faculty_remarks = ?, duplicate_penalty = ?, duplicate_of = ?, duplicate_cluster_id = ?
                 WHERE id = ?
                 """,
-                (eval_res.final_score, json.dumps(eval_res.flags), eval_res.faculty_remarks, dup_pen, dup_of, eval_res.id)
+                (eval_res.final_score, json.dumps(eval_res.flags), eval_res.faculty_remarks, dup_pen, dup_of, dup_cluster_id, eval_res.id)
             )
 
     # Sync to Excel
@@ -496,10 +512,15 @@ def get_student_evaluation(course_id: str, assignment_id: str, student_id: str):
 
         dup_pen = r["duplicate_penalty"] if "duplicate_penalty" in r.keys() and r["duplicate_penalty"] is not None else (20.0 if "DUPLICATE" in flags else 0.0)
         dup_of = r["duplicate_of"] if "duplicate_of" in r.keys() else None
+        dup_cluster_id = r["duplicate_cluster_id"] if "duplicate_cluster_id" in r.keys() else None
         if not dup_of and "Duplicate submission: Copied from " in (r["faculty_remarks"] or ""):
             m = re.search(r"Copied from (.*?)(?:\s*\(|$)", r["faculty_remarks"] or "")
             if m:
                 dup_of = m.group(1).strip()
+        if not dup_cluster_id and r["faculty_remarks"]:
+            m = re.search(r"duplicate cluster #?(\d+)", r["faculty_remarks"] or "", re.IGNORECASE)
+            if m:
+                dup_cluster_id = int(m.group(1))
 
         return EvaluationResultResponse(
             id=r["id"],
@@ -512,6 +533,7 @@ def get_student_evaluation(course_id: str, assignment_id: str, student_id: str):
             late_penalty=r["late_penalty"],
             duplicate_penalty=dup_pen,
             duplicate_of=dup_of,
+            duplicate_cluster_id=dup_cluster_id,
             final_score=r["final_score"],
             faculty_adjusted_score=r["faculty_adjusted_score"],
             faculty_approved=bool(r["faculty_approved"]),

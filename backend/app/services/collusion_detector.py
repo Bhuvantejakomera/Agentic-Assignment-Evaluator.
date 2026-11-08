@@ -200,8 +200,11 @@ class CollusionDetector:
             original_item = cl_items[0]
             orig_eval = eval_by_student.get(original_item["student_id"])
             if orig_eval:
+                orig_eval.duplicate_cluster_id = cluster_idx
+                orig_eval.duplicate_penalty = 0.0
+                orig_eval.duplicate_of = None
                 orig_eval.flags = list(set(orig_eval.flags + ["ORIGINAL_SUBMISSION"]))
-                orig_note = f"Original author in duplicate cluster ({len(cl_items)} students). Submitted earliest at {original_item['time'][:16]}."
+                orig_note = f"Original author in duplicate cluster #{cluster_idx} ({len(cl_items)} students). Submitted earliest at {original_item['time'][:16]}."
                 if orig_eval.faculty_remarks:
                     if "Original author" not in orig_eval.faculty_remarks:
                         orig_eval.faculty_remarks += f" | {orig_note}"
@@ -212,6 +215,9 @@ class CollusionDetector:
             for copied_item in cl_items[1:]:
                 cp_eval = eval_by_student.get(copied_item["student_id"])
                 if cp_eval:
+                    cp_eval.duplicate_cluster_id = cluster_idx
+                    cp_eval.duplicate_penalty = penalty_amount
+                    cp_eval.duplicate_of = original_item["student_name"]
                     # Apply -20 deduction
                     cp_eval.flags = list(set(cp_eval.flags + ["DUPLICATE"]))
                     # Remove ORIGINAL_SUBMISSION if present
@@ -225,7 +231,7 @@ class CollusionDetector:
 
                     # Format human-friendly time difference
                     time_note = f"submitted later at {copied_item['time'][:16]}"
-                    remark = f"Duplicate submission: Copied from {original_item['student_name']} ({time_note}). Plagiarism penalty applied: -{penalty_amount} pts."
+                    remark = f"Duplicate submission (Cluster #{cluster_idx}): Copied from {original_item['student_name']} ({time_note}). Plagiarism penalty applied: -{penalty_amount} pts."
                     if cp_eval.faculty_remarks:
                         if "Duplicate submission" not in cp_eval.faculty_remarks:
                             cp_eval.faculty_remarks = f"{remark} | {cp_eval.faculty_remarks}"

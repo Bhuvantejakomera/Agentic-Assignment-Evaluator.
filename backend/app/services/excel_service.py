@@ -387,7 +387,7 @@ class ExcelService:
             ws = wb.create_sheet(title=sheet_title)
 
         headers = [
-            "Student ID", "Student Name", "Role in Cluster", "Plagiarism Penalty",
+            "Cluster #", "Student ID", "Student Name", "Role in Cluster", "Plagiarism Penalty",
             "Final Score", "Copied From / Matched Peer", "Remarks"
         ]
         header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
@@ -403,11 +403,15 @@ class ExcelService:
         dup_font = Font(name="Calibri", size=10, bold=True, color="9C0006")
         orig_font = Font(name="Calibri", size=10, bold=True, color="1F497D")
 
-        # Sort so that original author appears before duplicates
+        # Sort so that clusters are grouped and original author appears first in each cluster
         def sort_key(item):
+            cid = getattr(item, "duplicate_cluster_id", None)
+            if cid is None:
+                # Try parsing from remarks
+                m = re.search(r"duplicate cluster #?(\d+)", item.faculty_remarks or "", re.IGNORECASE)
+                cid = int(m.group(1)) if m else 999
             is_orig = 0 if "ORIGINAL_SUBMISSION" in item.flags else 1
-            peer = getattr(item, "duplicate_of", "") or item.student_name
-            return (peer, is_orig)
+            return (cid, is_orig, item.student_name)
 
         sorted_items = sorted(collusion_items, key=sort_key)
 
@@ -416,28 +420,35 @@ class ExcelService:
             role = "DUPLICATE (Copied Work)" if is_dup else "ORIGINAL SUBMISSION (First to Submit)"
             penalty_val = -20.0 if is_dup else 0.0
             dup_of = getattr(res, "duplicate_of", None) or "-"
+            cid = getattr(res, "duplicate_cluster_id", None)
+            if cid is None:
+                m = re.search(r"duplicate cluster #?(\d+)", res.faculty_remarks or "", re.IGNORECASE)
+                cid = int(m.group(1)) if m else "-"
 
-            c1 = ws.cell(row_idx, 1, res.student_id)
-            c2 = ws.cell(row_idx, 2, res.student_name)
-            c3 = ws.cell(row_idx, 3, role)
-            c4 = ws.cell(row_idx, 4, penalty_val)
-            c5 = ws.cell(row_idx, 5, res.final_score)
-            c6 = ws.cell(row_idx, 6, dup_of)
-            c7 = ws.cell(row_idx, 7, res.faculty_remarks or "")
+            c0 = ws.cell(row_idx, 1, f"Cluster #{cid}" if isinstance(cid, int) else cid)
+            c1 = ws.cell(row_idx, 2, res.student_id)
+            c2 = ws.cell(row_idx, 3, res.student_name)
+            c3 = ws.cell(row_idx, 4, role)
+            c4 = ws.cell(row_idx, 5, penalty_val)
+            c5 = ws.cell(row_idx, 6, res.final_score)
+            c6 = ws.cell(row_idx, 7, dup_of)
+            c7 = ws.cell(row_idx, 8, res.faculty_remarks or "")
 
             row_fill = dup_fill if is_dup else orig_fill
             row_font = dup_font if is_dup else orig_font
+            c0.alignment = Alignment(horizontal="center", vertical="center")
             c3.fill = row_fill
             c3.font = row_font
             c4.font = row_font
 
-        ws.column_dimensions['A'].width = 16
-        ws.column_dimensions['B'].width = 24
-        ws.column_dimensions['C'].width = 28
-        ws.column_dimensions['D'].width = 18
-        ws.column_dimensions['E'].width = 14
-        ws.column_dimensions['F'].width = 28
-        ws.column_dimensions['G'].width = 45
+        ws.column_dimensions['A'].width = 14
+        ws.column_dimensions['B'].width = 16
+        ws.column_dimensions['C'].width = 24
+        ws.column_dimensions['D'].width = 28
+        ws.column_dimensions['E'].width = 18
+        ws.column_dimensions['F'].width = 14
+        ws.column_dimensions['G'].width = 28
+        ws.column_dimensions['H'].width = 45
 
     @classmethod
     def generate_detailed_assignment_report(

@@ -877,16 +877,233 @@ function setResultsFilter(filterName) {
   renderEvaluationsTable();
 }
 
+function getStudentClusterId(item) {
+  if (item.duplicate_cluster_id !== undefined && item.duplicate_cluster_id !== null) {
+    return item.duplicate_cluster_id;
+  }
+  if (item.faculty_remarks) {
+    const m = item.faculty_remarks.match(/duplicate cluster #?(\d+)/i);
+    if (m) return parseInt(m[1], 10);
+  }
+  if (item.duplicate_of) {
+    return item.duplicate_of;
+  }
+  return null;
+}
+
+function renderStudentRow(tbody, item, isClusterView = false) {
+  const isDup = item.flags.includes("DUPLICATE");
+  const isOrig = item.flags.includes("ORIGINAL_SUBMISSION");
+  const isWrong = item.flags.includes("WRONG_PDF");
+
+  let rowBg = "";
+  if (isClusterView) {
+    rowBg = isOrig ? "bg-blue-50/30 hover:bg-blue-50/50" : "bg-rose-50/30 hover:bg-rose-50/50";
+  } else {
+    if (isDup) rowBg = "bg-rose-50/40";
+    else if (isOrig) rowBg = "bg-blue-50/20";
+    else if (isWrong) rowBg = "bg-red-50/40";
+  }
+
+  const tr = document.createElement("tr");
+  tr.className = `border-b border-slate-100 transition cursor-pointer ${rowBg}`;
+  
+  // Effective score
+  const scoreVal = item.faculty_adjusted_score !== null ? item.faculty_adjusted_score : item.final_score;
+  const isOverridden = item.faculty_adjusted_score !== null;
+
+  // Badges
+  let flagBadges = "";
+  const cid = getStudentClusterId(item);
+  const clusterLabel = cid && !isClusterView ? ` (#${cid})` : "";
+
+  if (isOrig) {
+    flagBadges += `<span class="badge-flag bg-blue-100 text-blue-800 border border-blue-300 font-bold mr-1" title="Submitted first among duplicates. 0 penalty applied."><svg class="w-3 h-3 inline mr-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>ORIGINAL${clusterLabel}</span>`;
+  }
+  if (isDup) {
+    const dupNote = item.duplicate_of ? `Copied from ${item.duplicate_of}` : (item.faculty_remarks || 'Duplicate Submission');
+    flagBadges += `<span class="badge-flag bg-rose-100 text-rose-800 border border-rose-300 font-bold mr-1" title="${dupNote}">DUPLICATE (-20 pts)${clusterLabel}</span>`;
+  }
+  if (item.flags.includes("MISSING") || (item.faculty_remarks && item.faculty_remarks.toLowerCase().includes("missing"))) {
+    flagBadges += `<span class="badge-flag bg-red-100 text-red-800 border border-red-300 font-bold mr-1">Missing</span>`;
+  }
+  if (item.flags.includes("WRONG_PDF")) flagBadges += `<span class="badge-flag badge-wrong mr-1">Wrong PDF</span>`;
+  if (item.flags.includes("LATE")) flagBadges += `<span class="badge-flag badge-late mr-1">Late</span>`;
+  if (item.flags.includes("INCOMPLETE")) flagBadges += `<span class="badge-flag badge-incomplete mr-1">Incomplete</span>`;
+  if (item.flags.includes("UNCERTAIN")) flagBadges += `<span class="badge-flag badge-uncertain mr-1">Review</span>`;
+  if (!flagBadges) flagBadges = `<span class="text-xs text-slate-400">Normal</span>`;
+
+  const approvedIcon = item.faculty_approved
+    ? `<span class="inline-flex items-center text-xs font-semibold text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full"><svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>Approved</span>`
+    : `<span class="inline-flex items-center text-xs font-medium text-amber-700 bg-amber-100 px-2.5 py-0.5 rounded-full">Pending</span>`;
+
+  // Student Work direct button
+  const hasAttachments = item.attachments && item.attachments.length > 0;
+  let viewWorkBtn = "";
+  if (hasAttachments) {
+    const attCount = item.attachments.length;
+    const countLabel = attCount > 1 ? ` (${attCount})` : "";
+    const tooltip = attCount === 1
+      ? `Open ${item.attachments[0].filename} directly in Google Drive`
+      : `View ${attCount} files submitted by ${item.student_name}`;
+
+    viewWorkBtn = `
+      <button onclick="viewStudentWork('${item.student_id}', event)" class="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 hover:text-indigo-800 text-xs font-semibold rounded border border-indigo-200 transition inline-flex items-center gap-1 shadow-2xs shrink-0" title="${tooltip}">
+        <svg class="w-3.5 h-3.5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+        </svg>
+        <span>View Work${countLabel}</span>
+      </button>
+    `;
+  } else {
+    viewWorkBtn = `
+      <button disabled class="px-2.5 py-1 bg-slate-50 text-slate-400 text-xs font-medium rounded border border-slate-200 cursor-not-allowed inline-flex items-center gap-1 opacity-60 shrink-0" title="No submission attachments found for this student">
+        <svg class="w-3.5 h-3.5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
+        </svg>
+        <span>No Work</span>
+      </button>
+    `;
+  }
+
+  // Student name extra tag in cluster view
+  let nameTag = "";
+  if (isClusterView) {
+    if (isOrig) {
+      nameTag = `<span class="ml-1.5 px-2 py-0.5 rounded text-2xs font-extrabold bg-blue-100 text-blue-800 border border-blue-200 inline-flex items-center gap-1">★ 1st to Submit (Author)</span>`;
+    } else if (isDup) {
+      nameTag = `<span class="ml-1.5 px-2 py-0.5 rounded text-2xs font-medium bg-rose-100 text-rose-800 border border-rose-200 inline-flex items-center gap-1">Copied Submission (-20)</span>`;
+    }
+  }
+
+  let penaltySubtext = "";
+  if (isDup) {
+    penaltySubtext = `<span class="text-2xs text-rose-600 block font-bold">-20.0 penalty</span>`;
+  } else if (isOrig) {
+    penaltySubtext = `<span class="text-2xs text-blue-600 block font-semibold">0 deduction</span>`;
+  }
+
+  tr.innerHTML = `
+    <td class="py-3 px-4 font-mono text-xs text-slate-600">${item.student_id}</td>
+    <td class="py-3 px-4 font-semibold text-slate-800">
+      <div class="flex items-center flex-wrap gap-1">
+        <span>${item.student_name}</span>
+        ${nameTag}
+      </div>
+    </td>
+    <td class="py-3 px-4 text-center">
+      <span class="font-bold text-slate-800 ${isOverridden ? 'text-blue-600' : ''}">${scoreVal}</span>
+      ${penaltySubtext}
+      ${isOverridden ? '<span class="text-xs text-blue-500 block font-normal">(adjusted)</span>' : ''}
+    </td>
+    <td class="py-3 px-4 text-center text-xs text-slate-500">${item.late_penalty > 0 ? `-${item.late_penalty}` : '-'}</td>
+    <td class="py-3 px-4">${flagBadges}</td>
+    <td class="py-3 px-4 text-center">${approvedIcon}</td>
+    <td class="py-3 px-4 text-right whitespace-nowrap">
+      <div class="inline-flex items-center gap-2 justify-end">
+        ${viewWorkBtn}
+        <button onclick="openStudentModal('${item.student_id}')" class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded border border-slate-200 transition shrink-0">
+          Inspect & Adjust
+        </button>
+      </div>
+    </td>
+  `;
+  tbody.appendChild(tr);
+}
+
 function renderEvaluationsTable() {
   const tbody = document.getElementById("evaluations-table-body");
   tbody.innerHTML = "";
 
+  // 1. CLUSTERED DUPLICATES VIEW
+  if (appState.activeFilter === "DUPLICATE") {
+    let dupList = appState.evaluations.filter(e => 
+      e.flags.includes("DUPLICATE") || 
+      e.flags.includes("ORIGINAL_SUBMISSION") || 
+      (e.duplicate_penalty && e.duplicate_penalty > 0) ||
+      (e.faculty_remarks && e.faculty_remarks.includes("Duplicate submission"))
+    );
+
+    // Group into clusters
+    const clusterMap = new Map();
+    dupList.forEach(item => {
+      const cid = getStudentClusterId(item) || "other";
+      if (!clusterMap.has(cid)) clusterMap.set(cid, []);
+      clusterMap.get(cid).push(item);
+    });
+
+    let clusters = Array.from(clusterMap.entries());
+
+    // Search filter across clusters
+    if (appState.searchQuery) {
+      const q = appState.searchQuery.toLowerCase();
+      clusters = clusters.filter(([cid, members]) =>
+        members.some(m => m.student_name.toLowerCase().includes(q) || m.student_id.toLowerCase().includes(q))
+      );
+    }
+
+    // Sort clusters by numeric ID
+    clusters.sort((a, b) => {
+      const numA = typeof a[0] === "number" ? a[0] : parseInt(a[0], 10) || 999;
+      const numB = typeof b[0] === "number" ? b[0] : parseInt(b[0], 10) || 999;
+      return numA - numB;
+    });
+
+    if (clusters.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" class="text-center py-8 text-slate-500">No duplicate clusters found matching the search.</td></tr>`;
+      return;
+    }
+
+    clusters.forEach(([cid, members]) => {
+      // Sort members within cluster: original submitter first, then copied students
+      members.sort((a, b) => {
+        const isOrigA = a.flags.includes("ORIGINAL_SUBMISSION") ? 0 : 1;
+        const isOrigB = b.flags.includes("ORIGINAL_SUBMISSION") ? 0 : 1;
+        if (isOrigA !== isOrigB) return isOrigA - isOrigB;
+        return a.student_name.localeCompare(b.student_name);
+      });
+
+      const origAuthor = members.find(m => m.flags.includes("ORIGINAL_SUBMISSION")) || members[0];
+      const copies = members.filter(m => m.flags.includes("DUPLICATE") || m.student_id !== origAuthor.student_id);
+      const clusterLabel = typeof cid === "number" || !isNaN(parseInt(cid, 10)) ? `Cluster #${cid}` : `Cluster (${cid})`;
+
+      // Render Cluster Header Divider Row
+      const clusterRow = document.createElement("tr");
+      clusterRow.className = "bg-gradient-to-r from-slate-100 via-rose-50/50 to-slate-100 border-t-2 border-rose-300 font-semibold";
+      clusterRow.innerHTML = `
+        <td colspan="7" class="py-2.5 px-4">
+          <div class="flex flex-wrap items-center justify-between gap-2.5">
+            <div class="flex items-center gap-2">
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-rose-600 text-white font-black text-2xs uppercase tracking-wide shadow-2xs">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                ${clusterLabel}
+              </span>
+              <span class="font-bold text-slate-800 text-xs">Identical Work Submitted &bull; ${members.length} Students</span>
+              <span class="text-xs text-slate-600 hidden sm:inline">&bull; Original Author: <strong class="text-blue-700 font-bold">${origAuthor.student_name}</strong> (1st Submitter &bull; 0 penalty)</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="px-2.5 py-0.5 rounded-md text-2xs font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                ${copies.length} Copied Submissions (-20 pts penalty each)
+              </span>
+            </div>
+          </div>
+        </td>
+      `;
+      tbody.appendChild(clusterRow);
+
+      // Render all student rows belonging to this cluster
+      members.forEach(student => {
+        renderStudentRow(tbody, student, true);
+      });
+    });
+
+    return;
+  }
+
+  // 2. STANDARD FILTER VIEW (ALL, MISSING, LATE, ETC.)
   let list = appState.evaluations;
 
-  // Filter
-  if (appState.activeFilter === "DUPLICATE") {
-    list = list.filter(e => e.flags.includes("DUPLICATE") || e.flags.includes("ORIGINAL_SUBMISSION") || (e.faculty_remarks && e.faculty_remarks.includes("Duplicate submission")));
-  } else if (appState.activeFilter === "MISSING") {
+  if (appState.activeFilter === "MISSING") {
     list = list.filter(e => e.flags.includes("MISSING") || (e.faculty_remarks && e.faculty_remarks.toLowerCase().includes("missing")));
   } else if (appState.activeFilter === "UNCERTAIN") {
     list = list.filter(e => e.flags.includes("UNCERTAIN"));
@@ -914,91 +1131,7 @@ function renderEvaluationsTable() {
   }
 
   list.forEach(item => {
-    const isDup = item.flags.includes("DUPLICATE");
-    const isOrig = item.flags.includes("ORIGINAL_SUBMISSION");
-    const isWrong = item.flags.includes("WRONG_PDF");
-    let rowBg = "";
-    if (isDup) rowBg = "bg-rose-50/40";
-    else if (isOrig) rowBg = "bg-blue-50/20";
-    else if (isWrong) rowBg = "bg-red-50/40";
-
-    const tr = document.createElement("tr");
-    tr.className = `border-b border-slate-100 hover:bg-slate-50 transition cursor-pointer ${rowBg}`;
-    
-    // Effective score
-    const scoreVal = item.faculty_adjusted_score !== null ? item.faculty_adjusted_score : item.final_score;
-    const isOverridden = item.faculty_adjusted_score !== null;
-
-    // Badges
-    let flagBadges = "";
-    if (isDup) {
-      flagBadges += `<span class="badge-flag bg-rose-100 text-rose-800 border border-rose-300 font-bold mr-1" title="${item.faculty_remarks || 'Duplicate Submission'}">DUPLICATE (-20 pts)</span>`;
-    }
-    if (isOrig) {
-      flagBadges += `<span class="badge-flag bg-blue-100 text-blue-800 border border-blue-300 font-semibold mr-1" title="Original submitter (no deduction)">ORIGINAL (0 pts)</span>`;
-    }
-    if (item.flags.includes("MISSING") || (item.faculty_remarks && item.faculty_remarks.toLowerCase().includes("missing"))) {
-      flagBadges += `<span class="badge-flag bg-red-100 text-red-800 border border-red-300 font-bold mr-1">Missing</span>`;
-    }
-    if (item.flags.includes("WRONG_PDF")) flagBadges += `<span class="badge-flag badge-wrong mr-1">Wrong PDF</span>`;
-    if (item.flags.includes("LATE")) flagBadges += `<span class="badge-flag badge-late mr-1">Late</span>`;
-    if (item.flags.includes("INCOMPLETE")) flagBadges += `<span class="badge-flag badge-incomplete mr-1">Incomplete</span>`;
-    if (item.flags.includes("UNCERTAIN")) flagBadges += `<span class="badge-flag badge-uncertain mr-1">Review</span>`;
-    if (!flagBadges) flagBadges = `<span class="text-xs text-slate-400">Normal</span>`;
-
-    const approvedIcon = item.faculty_approved
-      ? `<span class="inline-flex items-center text-xs font-semibold text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full"><svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>Approved</span>`
-      : `<span class="inline-flex items-center text-xs font-medium text-amber-700 bg-amber-100 px-2.5 py-0.5 rounded-full">Pending</span>`;
-
-    // Student Work direct button
-    const hasAttachments = item.attachments && item.attachments.length > 0;
-    let viewWorkBtn = "";
-    if (hasAttachments) {
-      const attCount = item.attachments.length;
-      const countLabel = attCount > 1 ? ` (${attCount})` : "";
-      const tooltip = attCount === 1
-        ? `Open ${item.attachments[0].filename} directly in Google Drive`
-        : `View ${attCount} files submitted by ${item.student_name}`;
-
-      viewWorkBtn = `
-        <button onclick="viewStudentWork('${item.student_id}', event)" class="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 hover:text-indigo-800 text-xs font-semibold rounded border border-indigo-200 transition inline-flex items-center gap-1 shadow-2xs shrink-0" title="${tooltip}">
-          <svg class="w-3.5 h-3.5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-          </svg>
-          <span>View Work${countLabel}</span>
-        </button>
-      `;
-    } else {
-      viewWorkBtn = `
-        <button disabled class="px-2.5 py-1 bg-slate-50 text-slate-400 text-xs font-medium rounded border border-slate-200 cursor-not-allowed inline-flex items-center gap-1 opacity-60 shrink-0" title="No submission attachments found for this student">
-          <svg class="w-3.5 h-3.5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
-          </svg>
-          <span>No Work</span>
-        </button>
-      `;
-    }
-
-    tr.innerHTML = `
-      <td class="py-3 px-4 font-mono text-xs text-slate-600">${item.student_id}</td>
-      <td class="py-3 px-4 font-semibold text-slate-800">${item.student_name}</td>
-      <td class="py-3 px-4 text-center">
-        <span class="font-bold text-slate-800 ${isOverridden ? 'text-blue-600' : ''}">${scoreVal}</span>
-        ${isOverridden ? '<span class="text-xs text-blue-500 block font-normal">(adjusted)</span>' : ''}
-      </td>
-      <td class="py-3 px-4 text-center text-xs text-slate-500">${item.late_penalty > 0 ? `-${item.late_penalty}` : '-'}</td>
-      <td class="py-3 px-4">${flagBadges}</td>
-      <td class="py-3 px-4 text-center">${approvedIcon}</td>
-      <td class="py-3 px-4 text-right whitespace-nowrap">
-        <div class="inline-flex items-center gap-2 justify-end">
-          ${viewWorkBtn}
-          <button onclick="openStudentModal('${item.student_id}')" class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded border border-slate-200 transition shrink-0">
-            Inspect & Adjust
-          </button>
-        </div>
-      </td>
-    `;
-    tbody.appendChild(tr);
+    renderStudentRow(tbody, item, false);
   });
 }
 

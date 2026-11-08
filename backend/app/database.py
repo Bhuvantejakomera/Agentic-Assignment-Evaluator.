@@ -193,6 +193,9 @@ def init_db() -> None:
             overall_feedback TEXT,
             evaluated_at TEXT NOT NULL,
             approved_at TEXT,
+            duplicate_penalty REAL DEFAULT 0.0,
+            duplicate_of TEXT,
+            duplicate_cluster_id INTEGER,
             FOREIGN KEY (run_id) REFERENCES evaluation_runs(id) ON DELETE CASCADE,
             FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
             FOREIGN KEY (assignment_id) REFERENCES assignments(id) ON DELETE CASCADE,
@@ -237,6 +240,10 @@ def init_db() -> None:
             pass
         try:
             cursor.execute("ALTER TABLE evaluation_results ADD COLUMN duplicate_of TEXT")
+        except Exception:
+            pass
+        try:
+            cursor.execute("ALTER TABLE evaluation_results ADD COLUMN duplicate_cluster_id INTEGER")
         except Exception:
             pass
         try:
