@@ -230,3 +230,17 @@ def init_db() -> None:
         );
         """)
 
+        # Migrations for existing databases
+        try:
+            cursor.execute("ALTER TABLE evaluation_results ADD COLUMN duplicate_penalty REAL DEFAULT 0.0")
+        except Exception:
+            pass
+        try:
+            cursor.execute("ALTER TABLE evaluation_results ADD COLUMN duplicate_of TEXT")
+        except Exception:
+            pass
+        try:
+            cursor.execute("ALTER TABLE rubrics ADD COLUMN custom_guidance TEXT")
+        except Exception:
+            pass
+

@@ -170,6 +170,16 @@ const API = {
     });
     return res.json();
   },
+  async detectDuplicates(courseId, assignmentId) {
+    const res = await fetch(`${API_BASE}/api/classrooms/${courseId}/assignments/${assignmentId}/detect-duplicates`, {
+      method: "POST"
+    });
+    if (!res.ok) {
+      const msg = await parseErrorResponse(res, "Failed to run duplicate detection.");
+      throw new Error(msg);
+    }
+    return res.json();
+  },
 
   // Excel
   async getExcelColumns(courseId, assignmentId) {

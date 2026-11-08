@@ -1,4 +1,5 @@
 import json
+import re
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -77,7 +78,7 @@ def start_evaluation(course_id: str, assignment_id: str):
         # Retrieve enrolled students and their submissions
         sub_rows = conn.execute(
             """
-            SELECT s.id as sub_id, s.student_id, st.name as student_name, s.is_late, s.state,
+            SELECT s.id as sub_id, s.student_id, st.name as student_name, s.submission_time, s.is_late, s.state,
                    s.attachments_json, s.extracted_content_json, s.submission_flags_json
             FROM course_enrollments ce
             JOIN students st ON ce.student_id = st.id
@@ -174,6 +175,14 @@ def start_evaluation(course_id: str, assignment_id: str):
 
         evaluated_list.append(eval_res)
 
+    # 5. Detect duplicate / colluded submissions and apply penalties:
+    # Earliest submitter: Original author (0 penalty)
+    # Subsequent submitters: Copied work (-20 points penalty)
+    from backend.app.services.collusion_detector import CollusionDetector
+    evaluated_list, collusion_reports = CollusionDetector.process_collusion(
+        evaluated_list, [dict(r) for r in sub_rows], penalty_amount=20.0
+    )
+
     # Save evaluation results and update statuses in a single atomic transaction
     completed_time = datetime.now().isoformat()
     stats = {
@@ -182,11 +191,20 @@ def start_evaluation(course_id: str, assignment_id: str):
         "late_count": sum(1 for e in evaluated_list if "LATE" in e.flags),
         "wrong_submission_count": sum(1 for e in evaluated_list if "WRONG_PDF" in e.flags),
         "incomplete_count": sum(1 for e in evaluated_list if "INCOMPLETE" in e.flags),
-        "missing_count": sum(1 for e in evaluated_list if "MISSING" in e.flags)
+        "missing_count": sum(1 for e in evaluated_list if "MISSING" in e.flags),
+        "duplicate_count": sum(1 for e in evaluated_list if "DUPLICATE" in e.flags),
+        "collusion_clusters": len(collusion_reports)
     }
 
     with db_session() as conn:
         for eval_res in evaluated_list:
+            dup_pen = 20.0 if "DUPLICATE" in eval_res.flags else 0.0
+            dup_of = None
+            if "Duplicate submission: Copied from " in (eval_res.faculty_remarks or ""):
+                m = re.search(r"Copied from (.*?)(?:\s*\(|$)", eval_res.faculty_remarks)
+                if m:
+                    dup_of = m.group(1).strip()
+
             code_exec_json = eval_res.code_execution_results.model_dump_json() if eval_res.code_execution_results else None
             conn.execute(
                 """
@@ -194,8 +212,9 @@ def start_evaluation(course_id: str, assignment_id: str):
                     id, run_id, course_id, assignment_id, student_id, submission_id,
                     raw_score, late_penalty, final_score, faculty_adjusted_score,
                     faculty_approved, faculty_remarks, criteria_breakdown_json,
-                    code_execution_results_json, flags_json, overall_feedback, evaluated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    code_execution_results_json, flags_json, overall_feedback, evaluated_at,
+                    duplicate_penalty, duplicate_of
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     eval_res.id, run_id, course_id, assignment_id, eval_res.student_id, eval_res.submission_id if hasattr(eval_res, 'submission_id') else f"sub-{eval_res.student_id}",
@@ -203,7 +222,8 @@ def start_evaluation(course_id: str, assignment_id: str):
                     None, 0, eval_res.faculty_remarks,
                     json.dumps([c.model_dump() for c in eval_res.criteria_breakdown]),
                     code_exec_json, json.dumps(eval_res.flags),
-                    eval_res.overall_feedback, eval_res.evaluated_at
+                    eval_res.overall_feedback, eval_res.evaluated_at,
+                    dup_pen, dup_of
                 )
             )
 
@@ -304,6 +324,13 @@ def get_evaluations(course_id: str, assignment_id: str):
                 except Exception:
                     pass
 
+            dup_pen = r["duplicate_penalty"] if "duplicate_penalty" in r.keys() and r["duplicate_penalty"] is not None else (20.0 if "DUPLICATE" in flags else 0.0)
+            dup_of = r["duplicate_of"] if "duplicate_of" in r.keys() else None
+            if not dup_of and "Duplicate submission: Copied from " in (r["faculty_remarks"] or ""):
+                m = re.search(r"Copied from (.*?)(?:\s*\(|$)", r["faculty_remarks"] or "")
+                if m:
+                    dup_of = m.group(1).strip()
+
             results.append(EvaluationResultResponse(
                 id=r["id"],
                 run_id=r["run_id"],
@@ -313,6 +340,8 @@ def get_evaluations(course_id: str, assignment_id: str):
                 student_name=r["student_name"],
                 raw_score=r["raw_score"],
                 late_penalty=r["late_penalty"],
+                duplicate_penalty=dup_pen,
+                duplicate_of=dup_of,
                 final_score=r["final_score"],
                 faculty_adjusted_score=r["faculty_adjusted_score"],
                 faculty_approved=bool(r["faculty_approved"]),
@@ -326,6 +355,106 @@ def get_evaluations(course_id: str, assignment_id: str):
                 approved_at=r["approved_at"]
             ))
         return results
+
+@router.post("/detect-duplicates")
+def detect_duplicates_endpoint(course_id: str, assignment_id: str):
+    """
+    Scans all student submissions for duplicates and collusion.
+    Orders submissions chronologically by submission timestamp:
+    - Earliest submitter: Original author (0 penalty)
+    - Subsequent submitters: Copied work (-20 points penalty)
+    Updates database scores and the classroom Excel workbook.
+    """
+    with db_session() as conn:
+        eval_rows = conn.execute(
+            """
+            SELECT e.*, st.name as student_name
+            FROM evaluation_results e
+            JOIN students st ON e.student_id = st.id
+            WHERE e.course_id = ? AND e.assignment_id = ?
+            """,
+            (course_id, assignment_id)
+        ).fetchall()
+
+        if not eval_rows:
+            raise HTTPException(status_code=400, detail="No evaluations found for this assignment. Please evaluate submissions first.")
+
+        sub_rows = conn.execute(
+            """
+            SELECT sub.*, s.name as student_name
+            FROM submissions sub
+            JOIN students s ON sub.student_id = s.id
+            WHERE sub.course_id = ? AND sub.assignment_id = ?
+            """,
+            (course_id, assignment_id)
+        ).fetchall()
+
+        # Build evaluated_list objects
+        evaluated_list = []
+        for r in eval_rows:
+            crit_breakdown = [CriterionEvaluationResult(**c) for c in json.loads(r["criteria_breakdown_json"])]
+            code_res = CodeTestExecutionResult(**json.loads(r["code_execution_results_json"])) if r["code_execution_results_json"] else None
+            flags = json.loads(r["flags_json"]) if r["flags_json"] else []
+            raw_s = float(r["raw_score"])
+            late_p = float(r["late_penalty"])
+            base_final = max(0.0, round(raw_s - late_p, 1))
+
+            evaluated_list.append(EvaluationResultResponse(
+                id=r["id"],
+                run_id=r["run_id"],
+                course_id=r["course_id"],
+                assignment_id=r["assignment_id"],
+                student_id=r["student_id"],
+                student_name=r["student_name"],
+                raw_score=raw_s,
+                late_penalty=late_p,
+                final_score=base_final,
+                faculty_adjusted_score=r["faculty_adjusted_score"],
+                faculty_approved=bool(r["faculty_approved"]),
+                faculty_remarks=r["faculty_remarks"],
+                criteria_breakdown=crit_breakdown,
+                code_execution_results=code_res,
+                flags=[f for f in flags if f not in ("DUPLICATE", "ORIGINAL_SUBMISSION")],
+                attachments=[],
+                overall_feedback=r["overall_feedback"],
+                evaluated_at=r["evaluated_at"],
+                approved_at=r["approved_at"]
+            ))
+
+        from backend.app.services.collusion_detector import CollusionDetector
+        evaluated_list, clusters = CollusionDetector.process_collusion(
+            evaluated_list, [dict(r) for r in sub_rows], penalty_amount=20.0
+        )
+
+        # Update database records
+        for eval_res in evaluated_list:
+            dup_pen = 20.0 if "DUPLICATE" in eval_res.flags else 0.0
+            dup_of = None
+            if "Duplicate submission: Copied from " in (eval_res.faculty_remarks or ""):
+                m = re.search(r"Copied from (.*?)(?:\s*\(|$)", eval_res.faculty_remarks)
+                if m:
+                    dup_of = m.group(1).strip()
+
+            conn.execute(
+                """
+                UPDATE evaluation_results
+                SET final_score = ?, flags_json = ?, faculty_remarks = ?, duplicate_penalty = ?, duplicate_of = ?
+                WHERE id = ?
+                """,
+                (eval_res.final_score, json.dumps(eval_res.flags), eval_res.faculty_remarks, dup_pen, dup_of, eval_res.id)
+            )
+
+    # Sync to Excel
+    _sync_assignment_to_excel(course_id, assignment_id)
+
+    total_copies = sum(len(c["copied_students"]) for c in clusters)
+    return {
+        "status": "COMPLETED",
+        "total_clusters": len(clusters),
+        "total_duplicates_detected": total_copies,
+        "clusters": clusters,
+        "message": f"Detected {len(clusters)} duplicate clusters ({total_copies} copied submissions penalized -20 points). Marks updated in database and Excel."
+    }
 
 @router.get("/evaluations/{student_id}", response_model=EvaluationResultResponse)
 def get_student_evaluation(course_id: str, assignment_id: str, student_id: str):
@@ -365,6 +494,13 @@ def get_student_evaluation(course_id: str, assignment_id: str, student_id: str):
             except Exception:
                 pass
 
+        dup_pen = r["duplicate_penalty"] if "duplicate_penalty" in r.keys() and r["duplicate_penalty"] is not None else (20.0 if "DUPLICATE" in flags else 0.0)
+        dup_of = r["duplicate_of"] if "duplicate_of" in r.keys() else None
+        if not dup_of and "Duplicate submission: Copied from " in (r["faculty_remarks"] or ""):
+            m = re.search(r"Copied from (.*?)(?:\s*\(|$)", r["faculty_remarks"] or "")
+            if m:
+                dup_of = m.group(1).strip()
+
         return EvaluationResultResponse(
             id=r["id"],
             run_id=r["run_id"],
@@ -374,6 +510,8 @@ def get_student_evaluation(course_id: str, assignment_id: str, student_id: str):
             student_name=r["student_name"],
             raw_score=r["raw_score"],
             late_penalty=r["late_penalty"],
+            duplicate_penalty=dup_pen,
+            duplicate_of=dup_of,
             final_score=r["final_score"],
             faculty_adjusted_score=r["faculty_adjusted_score"],
             faculty_approved=bool(r["faculty_approved"]),

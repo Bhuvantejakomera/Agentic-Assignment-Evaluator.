@@ -290,6 +290,7 @@ class ExcelService:
             detail_sheet = wb.create_sheet(title=clean_assign_sheet_title)
 
         cls._populate_detailed_sheet(detail_sheet, evaluation_results)
+        cls._populate_collusion_sheet(wb, assignment_title, evaluation_results)
 
         # 6. Save the classroom master workbook
         wb.save(str(master_workbook_path))
@@ -319,7 +320,7 @@ class ExcelService:
         """Populates an assignment-specific detailed sheet with criterion breakdowns."""
         headers = [
             "Student ID", "Student Name", "Raw Score", "Late Penalty", 
-            "Final Score", "Faculty Override", "Status", "Remarks", "Criteria Breakdown", "Evidence Snippet"
+            "Final Score", "Faculty Override", "Duplicate Penalty", "Status", "Remarks", "Criteria Breakdown", "Evidence Snippet"
         ]
         for col_idx, h in enumerate(headers, 1):
             cell = ws.cell(1, col_idx, h)
@@ -335,17 +336,20 @@ class ExcelService:
             ws.cell(row_idx, 5, res.final_score)
             ws.cell(row_idx, 6, res.faculty_adjusted_score if res.faculty_adjusted_score is not None else "-")
 
+            dup_penalty_val = -20.0 if ("DUPLICATE" in res.flags or getattr(res, "duplicate_penalty", 0) > 0) else 0.0
+            ws.cell(row_idx, 7, dup_penalty_val)
+
             status_desc = "Approved" if res.faculty_approved else "Draft"
             if res.flags:
                 status_desc += f" ({', '.join(res.flags)})"
-            ws.cell(row_idx, 7, status_desc)
-            ws.cell(row_idx, 8, res.faculty_remarks or "")
+            ws.cell(row_idx, 8, status_desc)
+            ws.cell(row_idx, 9, res.faculty_remarks or "")
 
             crit_summaries = [f"{c.criterion_name}: {c.awarded_marks}/{c.max_marks} [{c.status}]" for c in res.criteria_breakdown]
             evidences = [f"[{c.criterion_name}] {c.evidence}" for c in res.criteria_breakdown if c.evidence]
 
-            ws.cell(row_idx, 9, "\n".join(crit_summaries))
-            ws.cell(row_idx, 10, "\n".join(evidences[:2]))
+            ws.cell(row_idx, 10, "\n".join(crit_summaries))
+            ws.cell(row_idx, 11, "\n".join(evidences[:2]))
 
         # Column widths
         ws.column_dimensions['A'].width = 16
@@ -354,10 +358,86 @@ class ExcelService:
         ws.column_dimensions['D'].width = 12
         ws.column_dimensions['E'].width = 12
         ws.column_dimensions['F'].width = 16
-        ws.column_dimensions['G'].width = 18
-        ws.column_dimensions['H'].width = 24
-        ws.column_dimensions['I'].width = 40
-        ws.column_dimensions['J'].width = 45
+        ws.column_dimensions['G'].width = 16
+        ws.column_dimensions['H'].width = 20
+        ws.column_dimensions['I'].width = 28
+        ws.column_dimensions['J'].width = 40
+        ws.column_dimensions['K'].width = 45
+
+    @classmethod
+    def _populate_collusion_sheet(
+        cls,
+        wb,
+        assignment_title: str,
+        evaluation_results: List[EvaluationResultResponse]
+    ):
+        """Populates a dedicated duplicate & collusion audit sheet if any clusters exist."""
+        collusion_items = [
+            res for res in evaluation_results
+            if "DUPLICATE" in res.flags or "ORIGINAL_SUBMISSION" in res.flags or getattr(res, "duplicate_penalty", 0) > 0
+        ]
+        if not collusion_items:
+            return
+
+        sheet_title = (cls.get_short_column_header(assignment_title)[:18] + " Collusion").strip()
+        if sheet_title in wb.sheetnames:
+            ws = wb[sheet_title]
+            ws.delete_rows(1, ws.max_row + 1)
+        else:
+            ws = wb.create_sheet(title=sheet_title)
+
+        headers = [
+            "Student ID", "Student Name", "Role in Cluster", "Plagiarism Penalty",
+            "Final Score", "Copied From / Matched Peer", "Remarks"
+        ]
+        header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="9C0006", end_color="9C0006", fill_type="solid")
+        for col_idx, h in enumerate(headers, 1):
+            cell = ws.cell(1, col_idx, h)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        dup_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+        orig_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+        dup_font = Font(name="Calibri", size=10, bold=True, color="9C0006")
+        orig_font = Font(name="Calibri", size=10, bold=True, color="1F497D")
+
+        # Sort so that original author appears before duplicates
+        def sort_key(item):
+            is_orig = 0 if "ORIGINAL_SUBMISSION" in item.flags else 1
+            peer = getattr(item, "duplicate_of", "") or item.student_name
+            return (peer, is_orig)
+
+        sorted_items = sorted(collusion_items, key=sort_key)
+
+        for row_idx, res in enumerate(sorted_items, 2):
+            is_dup = "DUPLICATE" in res.flags or getattr(res, "duplicate_penalty", 0) > 0
+            role = "DUPLICATE (Copied Work)" if is_dup else "ORIGINAL SUBMISSION (First to Submit)"
+            penalty_val = -20.0 if is_dup else 0.0
+            dup_of = getattr(res, "duplicate_of", None) or "-"
+
+            c1 = ws.cell(row_idx, 1, res.student_id)
+            c2 = ws.cell(row_idx, 2, res.student_name)
+            c3 = ws.cell(row_idx, 3, role)
+            c4 = ws.cell(row_idx, 4, penalty_val)
+            c5 = ws.cell(row_idx, 5, res.final_score)
+            c6 = ws.cell(row_idx, 6, dup_of)
+            c7 = ws.cell(row_idx, 7, res.faculty_remarks or "")
+
+            row_fill = dup_fill if is_dup else orig_fill
+            row_font = dup_font if is_dup else orig_font
+            c3.fill = row_fill
+            c3.font = row_font
+            c4.font = row_font
+
+        ws.column_dimensions['A'].width = 16
+        ws.column_dimensions['B'].width = 24
+        ws.column_dimensions['C'].width = 28
+        ws.column_dimensions['D'].width = 18
+        ws.column_dimensions['E'].width = 14
+        ws.column_dimensions['F'].width = 28
+        ws.column_dimensions['G'].width = 45
 
     @classmethod
     def generate_detailed_assignment_report(
@@ -373,6 +453,7 @@ class ExcelService:
         ws = wb.active
         ws.title = "Detailed Evaluation"
         cls._populate_detailed_sheet(ws, evaluation_results)
+        cls._populate_collusion_sheet(wb, assignment_title, evaluation_results)
 
         detail_file = reports_dir / f"Assignment_Evaluation_Detail_{timestamp_str}.xlsx"
         wb.save(str(detail_file))

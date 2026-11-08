@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Assignment Evaluator</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="/static/css/style.css?v=20261108">
+  <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body class="bg-slate-50 text-slate-900 min-h-screen flex flex-col antialiased">
 
@@ -185,6 +185,7 @@
         </div>
         <div class="flex items-center gap-2">
           <span id="rubric-assign-max" class="px-2.5 py-1 rounded-md text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200"></span>
+          <span id="rubric-status-badge" class="hidden"></span>
         </div>
       </div>
 
@@ -345,6 +346,10 @@
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
             Approve All Evaluated
           </button>
+          <button id="btn-detect-duplicates" onclick="runDuplicateDetection()" class="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-lg shadow-xs transition flex items-center gap-1.5" title="Check for duplicate submissions and penalize copies -20 pts">
+            <svg class="w-3.5 h-3.5 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+            <span>Check Duplicates</span>
+          </button>
           <button onclick="openExcelPreviewModal('master')" class="px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-xs font-semibold rounded-lg shadow-xs transition flex items-center gap-1.5" title="View Consolidated Excel Marks Record in browser">
             <svg class="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
             <span>View Excel</span>
@@ -384,6 +389,10 @@
       <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
         <div class="flex flex-wrap items-center gap-1.5 text-xs font-semibold">
           <button id="filter-btn-all" onclick="setResultsFilter('ALL')" class="filter-btn px-3 py-1.5 rounded-lg bg-blue-600 text-white transition">All Students</button>
+          <button id="filter-btn-duplicate" onclick="setResultsFilter('DUPLICATE')" class="filter-btn px-3 py-1.5 rounded-lg bg-white text-slate-600 hover:bg-slate-100 transition flex items-center gap-1.5">
+            <span>Duplicates</span>
+            <span id="count-duplicates" class="px-1.5 py-0.2 bg-rose-100 text-rose-700 rounded-full text-2xs font-bold">0</span>
+          </button>
           <button id="filter-btn-missing" onclick="setResultsFilter('MISSING')" class="filter-btn px-3 py-1.5 rounded-lg bg-white text-slate-600 hover:bg-slate-100 transition">Missing Submissions</button>
           <button id="filter-btn-uncertain" onclick="setResultsFilter('UNCERTAIN')" class="filter-btn px-3 py-1.5 rounded-lg bg-white text-slate-600 hover:bg-slate-100 transition">Review / Uncertain</button>
           <button id="filter-btn-late" onclick="setResultsFilter('LATE')" class="filter-btn px-3 py-1.5 rounded-lg bg-white text-slate-600 hover:bg-slate-100 transition">Late Submissions</button>
@@ -605,6 +614,9 @@
       <!-- Modal Body -->
       <div class="p-6 space-y-5 overflow-y-auto flex-1">
         
+        <!-- Duplicate / Collusion Banner -->
+        <div id="modal-duplicate-banner" class="hidden"></div>
+
         <!-- Score & Adjustment -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
           <div>
@@ -931,8 +943,8 @@
   </div>
 
   <!-- Scripts -->
-  <script src="/static/js/api.js?v=20261108_3"></script>
-  <script src="/static/js/app.js?v=20261108_3"></script>
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/app.js"></script>
 </body>
 </html>
 

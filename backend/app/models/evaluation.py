@@ -29,6 +29,8 @@ class EvaluationResultResponse(BaseModel):
     student_name: str
     raw_score: float
     late_penalty: float
+    duplicate_penalty: float = 0.0
+    duplicate_of: Optional[str] = None
     final_score: float
     faculty_adjusted_score: Optional[float] = None
     faculty_approved: bool = False

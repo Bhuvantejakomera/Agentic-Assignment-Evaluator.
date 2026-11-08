@@ -653,10 +653,10 @@ function renderRubricCriteria() {
   const approveBtn = document.getElementById("btn-approve-rubric");
   const startEvalBtn = document.getElementById("btn-start-eval");
 
-  // Remove status badge element completely for clean header
-  const statusBadge = document.getElementById("rubric-status-badge");
+  // Keep status badge removed for clean header
   if (statusBadge) {
-    statusBadge.remove();
+    statusBadge.className = "hidden";
+    statusBadge.textContent = "";
   }
 
   if (isApproved) {
@@ -852,11 +852,15 @@ function updateResultsStats() {
   const late = evals.filter(e => e.flags.includes("LATE")).length;
   const wrong = evals.filter(e => e.flags.includes("WRONG_PDF")).length;
   const uncertain = evals.filter(e => e.flags.includes("UNCERTAIN")).length;
+  const duplicates = evals.filter(e => e.flags.includes("DUPLICATE")).length;
+
+  const countDup = document.getElementById("count-duplicates");
+  if (countDup) countDup.textContent = duplicates;
 
   document.getElementById("stat-total-students").textContent = total;
   document.getElementById("stat-avg-score").textContent = `${avg} / ${appState.selectedAssignment.max_points}`;
   document.getElementById("stat-approved-count").textContent = `${approved} / ${total}`;
-  document.getElementById("stat-irregular-count").textContent = late + wrong + uncertain;
+  document.getElementById("stat-irregular-count").textContent = late + wrong + uncertain + duplicates;
 }
 
 function setResultsFilter(filterName) {
@@ -880,7 +884,9 @@ function renderEvaluationsTable() {
   let list = appState.evaluations;
 
   // Filter
-  if (appState.activeFilter === "MISSING") {
+  if (appState.activeFilter === "DUPLICATE") {
+    list = list.filter(e => e.flags.includes("DUPLICATE") || e.flags.includes("ORIGINAL_SUBMISSION") || (e.faculty_remarks && e.faculty_remarks.includes("Duplicate submission")));
+  } else if (appState.activeFilter === "MISSING") {
     list = list.filter(e => e.flags.includes("MISSING") || (e.faculty_remarks && e.faculty_remarks.toLowerCase().includes("missing")));
   } else if (appState.activeFilter === "UNCERTAIN") {
     list = list.filter(e => e.flags.includes("UNCERTAIN"));
@@ -908,8 +914,16 @@ function renderEvaluationsTable() {
   }
 
   list.forEach(item => {
+    const isDup = item.flags.includes("DUPLICATE");
+    const isOrig = item.flags.includes("ORIGINAL_SUBMISSION");
+    const isWrong = item.flags.includes("WRONG_PDF");
+    let rowBg = "";
+    if (isDup) rowBg = "bg-rose-50/40";
+    else if (isOrig) rowBg = "bg-blue-50/20";
+    else if (isWrong) rowBg = "bg-red-50/40";
+
     const tr = document.createElement("tr");
-    tr.className = `border-b border-slate-100 hover:bg-slate-50 transition cursor-pointer ${item.flags.includes("WRONG_PDF") ? "bg-red-50/40" : ""}`;
+    tr.className = `border-b border-slate-100 hover:bg-slate-50 transition cursor-pointer ${rowBg}`;
     
     // Effective score
     const scoreVal = item.faculty_adjusted_score !== null ? item.faculty_adjusted_score : item.final_score;
@@ -917,6 +931,12 @@ function renderEvaluationsTable() {
 
     // Badges
     let flagBadges = "";
+    if (isDup) {
+      flagBadges += `<span class="badge-flag bg-rose-100 text-rose-800 border border-rose-300 font-bold mr-1" title="${item.faculty_remarks || 'Duplicate Submission'}">DUPLICATE (-20 pts)</span>`;
+    }
+    if (isOrig) {
+      flagBadges += `<span class="badge-flag bg-blue-100 text-blue-800 border border-blue-300 font-semibold mr-1" title="Original submitter (no deduction)">ORIGINAL (0 pts)</span>`;
+    }
     if (item.flags.includes("MISSING") || (item.faculty_remarks && item.faculty_remarks.toLowerCase().includes("missing"))) {
       flagBadges += `<span class="badge-flag bg-red-100 text-red-800 border border-red-300 font-bold mr-1">Missing</span>`;
     }
@@ -1076,6 +1096,33 @@ async function openStudentModal(studentId) {
     document.getElementById("modal-remarks-input").value = s.faculty_remarks || "";
     document.getElementById("modal-approve-checkbox").checked = s.faculty_approved;
 
+    // Render duplicate / collusion banner if applicable
+    const dupBanner = document.getElementById("modal-duplicate-banner");
+    if (dupBanner) {
+      if (s.flags && s.flags.includes("DUPLICATE")) {
+        dupBanner.className = "p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-start gap-2.5";
+        dupBanner.innerHTML = `
+          <svg class="w-4 h-4 text-rose-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+          <div>
+            <div class="font-bold text-rose-900 text-sm">Duplicate Submission Detected (-20.0 pts deduction applied)</div>
+            <div class="text-rose-700 mt-0.5">${s.faculty_remarks || 'Submitted work matches an earlier submission from a peer.'}</div>
+          </div>
+        `;
+      } else if (s.flags && s.flags.includes("ORIGINAL_SUBMISSION")) {
+        dupBanner.className = "p-3.5 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-800 flex items-start gap-2.5";
+        dupBanner.innerHTML = `
+          <svg class="w-4 h-4 text-blue-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          <div>
+            <div class="font-bold text-blue-900 text-sm">Original Author (Submitted Earliest)</div>
+            <div class="text-blue-700 mt-0.5">Submitted earliest among matching submissions. Full marks preserved with 0 penalty.</div>
+          </div>
+        `;
+      } else {
+        dupBanner.className = "hidden";
+        dupBanner.innerHTML = "";
+      }
+    }
+
     // Render student submitted work / attachments
     const attList = s.attachments || [];
     const attContainer = document.getElementById("modal-attachments-list");
@@ -1190,6 +1237,26 @@ async function approveAllEvaluations() {
     showToast(`Approved ${res.approved_count} student evaluations!`, "success");
   } catch (err) {
     showToast("Error approving evaluations: " + err.message, "error");
+  } finally {
+    showLoading(false);
+  }
+}
+
+async function runDuplicateDetection() {
+  if (!appState.selectedCourse || !appState.selectedAssignment) {
+    showToast("Please select a classroom and assignment first.", "error");
+    return;
+  }
+  try {
+    showLoading(true, "Scanning submissions for duplicate code, files & collusion...");
+    const res = await API.detectDuplicates(appState.selectedCourse.id, appState.selectedAssignment.id);
+    await loadEvaluationsView({ pushHistory: false });
+    if (res.total_duplicates_detected > 0) {
+      setResultsFilter("DUPLICATE");
+    }
+    showToast(res.message || `Detected ${res.total_duplicates_detected} duplicates across ${res.total_clusters} clusters.`, "success");
+  } catch (err) {
+    showToast("Duplicate detection error: " + err.message, "error");
   } finally {
     showLoading(false);
   }
