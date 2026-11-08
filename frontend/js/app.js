@@ -545,6 +545,19 @@ async function openAssignment(assignmentId, options = { pushHistory: true }) {
 }
 
 // --- Rubric View ---
+function autoResizeGuidanceTextarea() {
+  const el = document.getElementById("rubric-guidance-input");
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = Math.max(92, Math.min(el.scrollHeight + 6, 320)) + "px";
+}
+
+function toggleGuidanceTemplates() {
+  const container = document.getElementById("guidance-templates-container");
+  if (!container) return;
+  container.classList.toggle("hidden");
+}
+
 function setGuidanceTemplate(templateType) {
   const guidanceInput = document.getElementById("rubric-guidance-input");
   if (!guidanceInput) return;
@@ -557,6 +570,7 @@ function setGuidanceTemplate(templateType) {
   } else if (templateType === "direct_code") {
     guidanceInput.value = "The student is expected to submit working C / C++ / Python source code files with comments, error handling, and compiler verification.";
   }
+  autoResizeGuidanceTextarea();
 }
 
 async function loadRubricView(options = { pushHistory: true }) {
@@ -577,6 +591,11 @@ async function loadRubricView(options = { pushHistory: true }) {
       guidanceInput.value = appState.rubric.custom_guidance;
     } else if (!guidanceInput.value.trim()) {
       guidanceInput.value = "";
+    }
+    autoResizeGuidanceTextarea();
+    if (!guidanceInput.dataset.hasResizeListener) {
+      guidanceInput.addEventListener("input", autoResizeGuidanceTextarea);
+      guidanceInput.dataset.hasResizeListener = "true";
     }
   }
 
@@ -634,41 +653,51 @@ function renderRubricCriteria() {
   const approveBtn = document.getElementById("btn-approve-rubric");
   const startEvalBtn = document.getElementById("btn-start-eval");
 
+  // Keep status badge removed for clean header
+  if (statusBadge) {
+    statusBadge.className = "hidden";
+    statusBadge.textContent = "";
+  }
+
   if (isApproved) {
-    if (statusBadge) {
-      statusBadge.className = "px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300";
-      statusBadge.textContent = "APPROVED BY FACULTY";
-    }
     if (editBtn) editBtn.classList.remove("hidden");
     if (approveBtn) approveBtn.classList.add("hidden");
     if (startEvalBtn) startEvalBtn.classList.remove("hidden");
   } else {
-    if (statusBadge) {
-      statusBadge.className = "px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300";
-      statusBadge.textContent = "DRAFT (REQUIRES APPROVAL)";
-    }
     if (editBtn) editBtn.classList.add("hidden");
     if (approveBtn) approveBtn.classList.remove("hidden");
     if (startEvalBtn) startEvalBtn.classList.add("hidden");
   }
 
+  const evalTypeMap = {
+    code_execution: { label: "Code Execution", color: "bg-blue-50 text-blue-700 border-blue-200" },
+    algorithm: { label: "Algorithm", color: "bg-purple-50 text-purple-700 border-purple-200" },
+    diagram_flowchart: { label: "Flowchart / Diagram", color: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+    compliance: { label: "Quality & Compliance", color: "bg-slate-100 text-slate-700 border-slate-200" },
+    descriptive: { label: "Descriptive", color: "bg-amber-50 text-amber-700 border-amber-200" }
+  };
+
   appState.rubric.criteria.forEach((crit, idx) => {
+    const typeMeta = evalTypeMap[crit.evaluation_type] || { label: crit.evaluation_type, color: "bg-slate-100 text-slate-700 border-slate-200" };
     const item = document.createElement("div");
-    item.className = "p-4 bg-slate-50 border border-slate-200 rounded-lg flex flex-col md:flex-row md:items-center justify-between gap-4";
+    item.className = "p-4.5 bg-white border border-slate-200/90 hover:border-slate-300 rounded-xl transition shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4";
     item.innerHTML = `
-      <div class="flex-1">
-        <div class="flex items-center gap-2 mb-1">
-          <span class="w-6 h-6 rounded-full bg-blue-100 text-blue-800 text-xs font-bold flex items-center justify-center">${idx + 1}</span>
-          <h4 class="font-bold text-slate-800">${crit.name}</h4>
-          <span class="text-xs px-2 py-0.5 rounded bg-slate-200 text-slate-700">${crit.evaluation_type}</span>
+      <div class="flex-1 min-w-0">
+        <div class="flex flex-wrap items-center gap-2 mb-1.5">
+          <span class="w-6 h-6 rounded-md bg-blue-50 text-blue-700 text-xs font-bold flex items-center justify-center shrink-0 border border-blue-100/80">${idx + 1}</span>
+          <h4 class="font-bold text-slate-800 text-sm tracking-tight">${crit.name}</h4>
+          <span class="text-3xs font-semibold px-2 py-0.5 rounded-full border ${typeMeta.color}">${typeMeta.label}</span>
         </div>
-        <p class="text-xs text-slate-600 pl-8">${crit.description}</p>
+        <p class="text-xs text-slate-500 pl-8 leading-relaxed">${crit.description}</p>
       </div>
-      <div class="flex items-center gap-3 pl-8 md:pl-0">
-        <label class="text-xs text-slate-500 font-medium">Max Marks:</label>
-        <input type="number" step="any" min="0" max="100" id="criterion-mark-${crit.id}" value="${crit.max_marks}" ${isApproved ? "disabled" : ""} 
-          oninput="updateCriterionMarks('${crit.id}', this.value)"
-          class="w-24 px-2.5 py-1.5 text-sm font-bold text-slate-800 bg-white border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none">
+      <div class="flex items-center gap-2 shrink-0 pl-8 md:pl-0">
+        <label class="text-xs text-slate-400 font-medium">Max Marks:</label>
+        <div class="flex items-center">
+          <input type="number" step="any" min="0" max="100" id="criterion-mark-${crit.id}" value="${crit.max_marks}" ${isApproved ? "disabled" : ""} 
+            oninput="updateCriterionMarks('${crit.id}', this.value)"
+            class="w-20 px-2.5 py-1.5 text-sm font-bold text-slate-800 bg-slate-50 hover:bg-white border border-slate-200 rounded-lg text-right pr-2 focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 focus:outline-none transition ${isApproved ? "opacity-75 cursor-not-allowed bg-slate-100" : ""}">
+          <span class="text-xs font-semibold text-slate-400 ml-1.5">pts</span>
+        </div>
       </div>
     `;
     container.appendChild(item);
