@@ -653,10 +653,10 @@ function renderRubricCriteria() {
   const approveBtn = document.getElementById("btn-approve-rubric");
   const startEvalBtn = document.getElementById("btn-start-eval");
 
-  // Keep status badge removed for clean header
+  // Remove status badge element completely for clean header
+  const statusBadge = document.getElementById("rubric-status-badge");
   if (statusBadge) {
-    statusBadge.className = "hidden";
-    statusBadge.textContent = "";
+    statusBadge.remove();
   }
 
   if (isApproved) {
