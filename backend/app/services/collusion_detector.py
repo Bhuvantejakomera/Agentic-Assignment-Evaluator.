@@ -67,7 +67,7 @@ class CollusionDetector:
         # 5. High Code Token Jaccard Similarity (>= 94% with similar length)
         code_a = item_a.get("code_clean", "")
         code_b = item_b.get("code_clean", "")
-        if len(code_a) > 200 and len(code_b) > 200:
+        if len(code_a) > 80 and len(code_b) > 80:
             tokens_a = set(code_a.split())
             tokens_b = set(code_b.split())
             union = len(tokens_a | tokens_b)
@@ -75,6 +75,21 @@ class CollusionDetector:
                 sim = len(tokens_a & tokens_b) / union
                 if sim >= 0.94 and abs(len(code_a) - len(code_b)) < 80:
                     return True, f"Near-identical code token similarity ({int(sim * 100)}% match)"
+
+        # 6. High Substantive Document Text Similarity (>= 95% word match on deliverables)
+        txt_a = item_a.get("txt_clean", "")
+        txt_b = item_b.get("txt_clean", "")
+        if len(txt_a) > 250 and len(txt_b) > 250:
+            words_a = set(re.findall(r"\b[a-zA-Z]{4,}\b", txt_a.lower()))
+            words_b = set(re.findall(r"\b[a-zA-Z]{4,}\b", txt_b.lower()))
+            name_words = set((item_a.get("student_name", "") + " " + item_b.get("student_name", "")).lower().split())
+            words_a -= name_words
+            words_b -= name_words
+            union = len(words_a | words_b)
+            if union > 35:
+                sim = len(words_a & words_b) / union
+                if sim >= 0.95 and abs(len(txt_a) - len(txt_b)) < 120:
+                    return True, f"Near-identical document content ({int(sim * 100)}% text match)"
 
         return False, ""
 
@@ -160,7 +175,7 @@ class CollusionDetector:
             code_snippets = ext.get("code_snippets") or []
             all_codes = [cls.clean_code(cs.get("code", "")) for cs in code_snippets if len(cs.get("code", "").strip()) > 30]
             combined_code = " ".join(all_codes)
-            code_hash = hashlib.sha256(combined_code.encode()).hexdigest() if len(combined_code) > 100 else None
+            code_hash = hashlib.sha256(combined_code.encode()).hexdigest() if len(combined_code) > 50 else None
 
             txt = (ext.get("text_content") or "").lower()
             prompts = cls.extract_terminal_prompts(txt)
